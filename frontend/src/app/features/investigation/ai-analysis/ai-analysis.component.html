@@ -1,0 +1,119 @@
+<section class="panel ai-panel">
+  <h2 class="panel-title">AI Investigation</h2>
+  <p class="panel-subtitle">
+    AI analysis is grounded in Nextrace's timeline, evidence, and candidate
+    data. It is an investigative aid, not proof of causation.
+  </p>
+
+  @if (state() === 'idle') {
+    <button type="button" class="analyze-button" (click)="analyze()">Analyze with AI</button>
+  }
+
+  @if (state() === 'loading') {
+    <p class="ai-state">Analyzing investigation&hellip;</p>
+  }
+
+  @if (state() === 'unavailable') {
+    <p class="ai-state ai-state--unavailable">{{ errorMessage() }}</p>
+  }
+
+  @if (state() === 'error') {
+    <p class="ai-state ai-state--error">{{ errorMessage() }}</p>
+    <button type="button" class="analyze-button" (click)="analyze()">Try again</button>
+  }
+
+  @if (state() === 'success' && analysis(); as result) {
+    <div class="ai-result">
+      <div class="ai-block">
+        <h3>Summary</h3>
+        <p>{{ result.summary }}</p>
+      </div>
+
+      <div class="ai-block">
+        <h3>Primary candidate</h3>
+        @if (result.primary_candidate) {
+          <p class="ai-candidate-line">
+            {{ labelFor(result.primary_candidate.event_type) }}
+            <span class="ai-candidate-id">#{{ result.primary_candidate.event_id }}</span>
+          </p>
+          @if (result.primary_candidate.supporting_evidence_ids.length > 0) {
+            <div class="ai-evidence-refs">
+              <span class="ai-evidence-refs-label">Supporting evidence</span>
+              <ul>
+                @for (evidenceId of result.primary_candidate.supporting_evidence_ids; track evidenceId) {
+                  <li><a class="evidence-link" [href]="'#evidence-' + evidenceId">{{ evidenceId }}</a></li>
+                }
+              </ul>
+            </div>
+          }
+        } @else {
+          <p class="empty-state">
+            Insufficient evidence to identify a primary candidate confidently.
+          </p>
+        }
+      </div>
+
+      @if (result.alternative_candidates.length > 0) {
+        <div class="ai-block">
+          <h3>Alternative candidates</h3>
+          <ul class="ai-alternatives">
+            @for (alt of result.alternative_candidates; track alt.event_id) {
+              <li>
+                {{ labelFor(alt.event_type) }}
+                <span class="ai-candidate-id">#{{ alt.event_id }}</span>
+                @if (alt.supporting_evidence_ids.length > 0) {
+                  <div class="ai-evidence-refs">
+                    <span class="ai-evidence-refs-label">Supporting evidence</span>
+                    <ul>
+                      @for (evidenceId of alt.supporting_evidence_ids; track evidenceId) {
+                        <li><a class="evidence-link" [href]="'#evidence-' + evidenceId">{{ evidenceId }}</a></li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (result.supporting_points.length > 0) {
+        <div class="ai-block">
+          <h3>Supporting points</h3>
+          <p class="ai-block-note">The AI's own analysis of the evidence above - not additional evidence itself.</p>
+          <ul>
+            @for (point of result.supporting_points; track point) {
+              <li>{{ point }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (result.uncertainties.length > 0) {
+        <div class="ai-block ai-block--uncertainty">
+          <h3>Uncertainties</h3>
+          <ul>
+            @for (item of result.uncertainties; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (result.recommended_checks.length > 0) {
+        <div class="ai-block">
+          <h3>Recommended verification</h3>
+          <ul>
+            @for (check of result.recommended_checks; track check) {
+              <li>{{ check }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      <button type="button" class="analyze-button analyze-button--secondary" (click)="analyze()">
+        Re-analyze
+      </button>
+    </div>
+  }
+</section>

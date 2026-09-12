@@ -1,0 +1,14 @@
+{
+  "/investigations": {
+    "target": "http://localhost:8000",
+    "secure": false
+  },
+  "/events": {
+    "target": "http://localhost:8000",
+    "secure": false
+  },
+  "/health": {
+    "target": "http://localhost:8000",
+    "secure": false
+  }
+}

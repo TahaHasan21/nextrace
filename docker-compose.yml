@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: nextrace-postgres
+    restart: unless-stopped
+    environment:
+      # Development-only defaults, overridable via a root .env file (see
+      # .env.example) - never hardcoded credentials in this tracked file.
+      POSTGRES_DB: ${POSTGRES_DB:-nextrace}
+      POSTGRES_USER: ${POSTGRES_USER:-nextrace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nextrace_dev}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nextrace} -d ${POSTGRES_DB:-nextrace}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: nextrace-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Internal Docker network: service name + container port, never the
+      # host-mapped 5433. Built from the same variables as the postgres
+      # service above so credentials can never drift between the two.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nextrace}:${POSTGRES_PASSWORD:-nextrace_dev}@postgres:5432/${POSTGRES_DB:-nextrace}
+      # AI is optional - an empty AI_API_KEY still starts the backend; the
+      # analysis endpoint just returns a controlled 503 until configured.
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-5}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: nextrace-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,95 @@
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-name">NEXTRACE</span>
+    <span class="brand-tagline">Understand what happened. Discover why.</span>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="lookup panel">
+    <label class="lookup-label" for="event-id">Event ID</label>
+    <div class="lookup-row">
+      <input
+        id="event-id"
+        type="number"
+        min="1"
+        placeholder="e.g. 25"
+        name="eventId"
+        [(ngModel)]="eventIdInput"
+        [readOnly]="state() === 'loading'"
+        (keydown.enter)="investigate()"
+      />
+      <button type="button" [disabled]="state() === 'loading'" (click)="investigate()">
+        {{ state() === 'loading' ? 'Investigating…' : 'Investigate' }}
+      </button>
+    </div>
+  </section>
+
+  @switch (state()) {
+    @case ('loading') {
+      <div class="panel state-panel">Loading investigation&hellip;</div>
+    }
+    @case ('not-found') {
+      <div class="panel state-panel state-panel--empty">
+        <p>No event found with ID {{ requestedEventId() }}.</p>
+        <button type="button" class="retry-button" (click)="retry()">Try again</button>
+      </div>
+    }
+    @case ('error') {
+      <div class="panel state-panel state-panel--error">
+        <p>{{ errorMessage() || 'Something went wrong loading this investigation.' }}</p>
+        <button type="button" class="retry-button" (click)="retry()">Try again</button>
+      </div>
+    }
+    @case ('success') {
+      @if (investigation(); as inv) {
+        <section class="panel incident-summary">
+          <div class="incident-eyebrow-row">
+            <span class="incident-eyebrow">Production Investigation</span>
+            <span class="badge badge--target">Investigation Target</span>
+          </div>
+          <span class="incident-event-id">Event #{{ inv.target_event.id }}</span>
+          <span class="incident-event-type">{{ eventTypeLabel(inv.target_event.event_type) }}</span>
+          <p class="incident-message">{{ inv.target_event.message }}</p>
+          <dl class="incident-meta">
+            <div>
+              <dt>Service</dt>
+              <dd>{{ inv.target_event.service }} &bull; {{ inv.target_event.environment }}</dd>
+            </div>
+            <div>
+              <dt>Timestamp</dt>
+              <dd>{{ inv.target_event.timestamp | date: "MMMM d, y HH:mm" : 'UTC' }} UTC</dd>
+            </div>
+            <div>
+              <dt>Severity</dt>
+              <dd>{{ inv.target_event.severity ?? 'n/a' }}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{{ inv.target_event.source }}</dd>
+            </div>
+            <div>
+              <dt>AI analysis</dt>
+              <dd class="ai-status" [attr.data-ai-status]="aiAnalysisState()">
+                {{ aiAnalysisStatusLabel() }}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <app-timeline [events]="inv.timeline" [targetEventId]="inv.target_event.id" />
+        <app-candidates [candidates]="inv.candidates" [evidence]="inv.evidence" />
+        <app-evidence [items]="inv.evidence" [timeline]="inv.timeline" />
+        <app-ai-analysis
+          [eventId]="inv.target_event.id"
+          (analysisStateChange)="onAiAnalysisStateChange($event)"
+        />
+      }
+    }
+    @default {
+      <div class="panel state-panel">
+        Enter an event ID above to begin an investigation.
+      </div>
+    }
+  }
+</main>

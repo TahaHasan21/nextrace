@@ -1,0 +1,3 @@
+# Used by `docker compose up` for variable substitution (AI_API_KEY, etc).
+# Never commit real credentials.
+.env

@@ -1,0 +1,46 @@
+<section class="panel">
+  <h2 class="panel-title">Root Cause Candidates</h2>
+  <p class="panel-subtitle">
+    Candidate scores are evidence-based investigation heuristics, not
+    probabilities or confirmed root causes.
+  </p>
+
+  @if (candidates.length === 0) {
+    <p class="empty-state">
+      No investigation candidates were found - this event has no eligible
+      preceding activity.
+    </p>
+  } @else {
+    <ol class="candidates-list">
+      @for (candidate of candidates; track candidate.event_id; let rank = $index) {
+        <li class="candidate-item">
+          <div class="candidate-heading">
+            <span class="candidate-rank">#{{ rank + 1 }}</span>
+            <span class="candidate-type">{{ labelFor(candidate.event_type) }}</span>
+            <span class="candidate-score">Score: {{ candidate.score }}</span>
+          </div>
+          <ul class="candidate-reasons">
+            @for (reason of candidate.reasons; track reason) {
+              <li>{{ reason }}</li>
+            }
+          </ul>
+
+          @if (supportingEvidence(candidate).length > 0) {
+            <div class="supporting-references">
+              <span class="supporting-references-label">Supporting evidence</span>
+              <ul class="supporting-references-list">
+                @for (ref of supportingEvidence(candidate); track ref.id) {
+                  <li>
+                    <a class="evidence-link" [href]="'#evidence-' + ref.id" [title]="ref.description">
+                      {{ ref.label }}
+                    </a>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </li>
+      }
+    </ol>
+  }
+</section>

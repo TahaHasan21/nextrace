@@ -1,0 +1,53 @@
+<section class="panel">
+  <h2 class="panel-title">Investigation Timeline</h2>
+
+  @if (events.length === 0) {
+    <p class="empty-state">No events in this timeline.</p>
+  } @else {
+    <ol class="timeline">
+      @for (event of events; track event.id) {
+        <li
+          class="timeline-row"
+          [id]="'event-' + event.id"
+          [class.timeline-row--target]="event.id === targetEventId"
+        >
+          <div class="timeline-time">{{ event.timestamp | date: 'HH:mm:ss' : 'UTC' }}</div>
+          <div class="timeline-marker" [attr.data-severity]="event.severity ?? 'default'"></div>
+          <div class="timeline-content">
+            <div class="timeline-heading">
+              <span class="event-type">{{ labelFor(event.event_type) }}</span>
+              @if (event.id === targetEventId) {
+                <span class="badge badge--target">Investigation Target</span>
+              }
+              @if (event.severity) {
+                <span class="badge badge--severity" [attr.data-severity]="event.severity">{{
+                  event.severity
+                }}</span>
+              }
+            </div>
+            <p class="timeline-message">{{ event.message }}</p>
+            <p class="timeline-meta">
+              <span>Source: {{ event.source }}</span>
+              <span class="timeline-meta-sep">&middot;</span>
+              <span>#{{ event.id }}</span>
+            </p>
+
+            @if (hasMetadata(event)) {
+              <details class="metadata-toggle">
+                <summary>View metadata</summary>
+                <dl class="metadata-list">
+                  @for (entry of metadataEntries(event); track entry.key) {
+                    <div class="metadata-row">
+                      <dt>{{ entry.key }}</dt>
+                      <dd>{{ entry.value }}</dd>
+                    </div>
+                  }
+                </dl>
+              </details>
+            }
+          </div>
+        </li>
+      }
+    </ol>
+  }
+</section>

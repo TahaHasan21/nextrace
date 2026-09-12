@@ -1,0 +1,36 @@
+<section class="panel">
+  <h2 class="panel-title">Evidence</h2>
+  <p class="panel-subtitle">
+    Deterministic, observed relationships between events - timing, ordering,
+    and recovery patterns, not causal explanations.
+  </p>
+
+  @if (items.length === 0) {
+    <p class="empty-state">No evidence relationships were found for this investigation.</p>
+  } @else {
+    <ul class="evidence-list">
+      @for (item of items; track item.id) {
+        <li class="evidence-item" [id]="'evidence-' + item.id">
+          <div class="evidence-heading">
+            <span class="evidence-type">{{ labelFor(item.type) }}</span>
+            <span class="evidence-id" [title]="item.id">{{ item.id }}</span>
+          </div>
+          <p class="evidence-description">{{ item.description }}</p>
+          <div class="related-events">
+            <span class="related-events-label">Related events</span>
+            <ul class="related-events-list">
+              @for (related of relatedEvents(item); track related.id) {
+                <li>
+                  <a class="related-event-link" [href]="'#event-' + related.id">
+                    <span class="related-time">{{ related.time }}</span>
+                    <span class="related-label">{{ related.label }}</span>
+                  </a>
+                </li>
+              }
+            </ul>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</section>

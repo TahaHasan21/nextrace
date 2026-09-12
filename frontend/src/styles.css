@@ -1,0 +1,140 @@
+/* Nextrace design tokens - a restrained, observability-console aesthetic.
+   No gradients, no neon, no decorative chrome. */
+
+:root {
+  --color-bg: #0c0f14;
+  --color-surface: #12161d;
+  --color-surface-alt: #171c25;
+  --color-border: #262d3a;
+  --color-border-strong: #333c4d;
+
+  --color-text-primary: #e7eaf0;
+  --color-text-secondary: #9aa5b8;
+  --color-text-muted: #6b7484;
+
+  --color-accent: #4fa3d1;
+  --color-accent-strong: #7cc2e6;
+
+  --color-severity-critical: #e5636b;
+  --color-severity-warning: #d7a03d;
+  --color-severity-info: #4fa3d1;
+  --color-severity-default: #6b7484;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+input {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Shared building blocks reused across investigation feature components. */
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+.panel-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+
+.empty-state {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+}
+
+.badge--target {
+  color: var(--color-accent-strong);
+  border-color: var(--color-accent);
+  background: rgba(79, 163, 209, 0.12);
+}
+
+.badge--severity[data-severity='critical'] {
+  color: var(--color-severity-critical);
+  border-color: var(--color-severity-critical);
+  background: rgba(229, 99, 107, 0.1);
+}
+
+.badge--severity[data-severity='warning'] {
+  color: var(--color-severity-warning);
+  border-color: var(--color-severity-warning);
+  background: rgba(215, 160, 61, 0.1);
+}
+
+.badge--severity[data-severity='info'] {
+  color: var(--color-severity-info);
+  border-color: var(--color-severity-info);
+  background: rgba(79, 163, 209, 0.1);
+}

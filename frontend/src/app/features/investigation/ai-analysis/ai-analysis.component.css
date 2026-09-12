@@ -1,0 +1,134 @@
+.analyze-button {
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #06131c;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.analyze-button:hover {
+  background: var(--color-accent-strong);
+}
+
+.analyze-button--secondary {
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
+
+.analyze-button--secondary:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.ai-state {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.ai-state--unavailable {
+  color: var(--color-text-muted);
+}
+
+.ai-state--error {
+  color: var(--color-severity-critical);
+}
+
+.ai-result {
+  display: grid;
+  gap: 16px;
+}
+
+.ai-block h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+
+.ai-block p,
+.ai-block ul {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+
+.ai-block ul {
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  display: grid;
+  gap: 4px;
+}
+
+.ai-block-note {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+/* Uncertainty gets prominent treatment - it's as central to an honest
+   investigation result as the candidates themselves, not an afterthought. */
+.ai-block--uncertainty {
+  border-left: 2px solid var(--color-severity-warning);
+  padding-left: 12px;
+}
+
+.ai-block--uncertainty h3 {
+  color: var(--color-severity-warning);
+}
+
+.ai-candidate-line {
+  font-weight: 600;
+}
+
+.ai-candidate-id {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-left: 6px;
+}
+
+.ai-alternatives li {
+  margin-bottom: 6px;
+}
+
+.ai-evidence-refs {
+  margin-top: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-evidence-refs-label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.ai-evidence-refs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.ai-evidence-refs li {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.evidence-link {
+  color: var(--color-accent-strong);
+  text-decoration: none;
+}
+
+.evidence-link:hover {
+  text-decoration: underline;
+}
