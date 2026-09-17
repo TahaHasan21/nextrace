@@ -19,26 +19,34 @@
             <span class="candidate-type">{{ labelFor(candidate.event_type) }}</span>
             <span class="candidate-score">Score: {{ candidate.score }}</span>
           </div>
-          <ul class="candidate-reasons">
-            @for (reason of candidate.reasons; track reason) {
-              <li>{{ reason }}</li>
-            }
-          </ul>
 
-          @if (supportingEvidence(candidate).length > 0) {
-            <div class="supporting-references">
-              <span class="supporting-references-label">Supporting evidence</span>
-              <ul class="supporting-references-list">
-                @for (ref of supportingEvidence(candidate); track ref.id) {
-                  <li>
-                    <a class="evidence-link" [href]="'#evidence-' + ref.id" [title]="ref.description">
-                      {{ ref.label }}
-                    </a>
-                  </li>
-                }
-              </ul>
-            </div>
-          }
+          <details class="candidate-details">
+            <summary>Why this candidate?</summary>
+
+            <ul class="candidate-reasons">
+              @for (reason of candidateReasons(candidate); track reason.text) {
+                <li>
+                  <span class="reason-code" [attr.data-code]="reason.code">{{ reason.label }}</span>
+                  <span class="reason-text">{{ reason.text }}</span>
+                </li>
+              }
+            </ul>
+
+            @if (supportingEvidence(candidate).length > 0) {
+              <div class="supporting-references">
+                <span class="supporting-references-label">Supporting evidence</span>
+                <ul class="supporting-references-list">
+                  @for (ref of supportingEvidence(candidate); track ref.id) {
+                    <li>
+                      <a class="evidence-link" [href]="'#evidence-' + ref.id" [title]="ref.description">
+                        {{ ref.label }}
+                      </a>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+          </details>
         </li>
       }
     </ol>

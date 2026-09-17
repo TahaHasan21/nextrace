@@ -1,14 +1,19 @@
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.db.session import get_db
+from app.models.analysis_run import AnalysisRun
+from app.models.event import Event
+from app.schemas.analysis_run import AnalysisRunDetail, AnalysisRunSummary
 from app.schemas.investigation import InvestigationRead
-from app.services.ai.analysis import InvestigationAnalysis, analyze_investigation
+from app.services.ai.analysis import InvestigationAnalysis
 from app.services.ai.context import build_investigation_context
 from app.services.ai.provider import AIProvider, AIProviderError, get_ai_provider
+from app.services.analysis_history import run_analysis
 from app.services.investigation import build_investigation
 
 router = APIRouter(prefix="/investigations", tags=["investigations"])
@@ -87,7 +92,13 @@ def get_investigation_analysis(
     started = time.perf_counter()
 
     try:
-        analysis = analyze_investigation(context, provider)
+        # run_analysis() persists a pending AnalysisRun before calling the
+        # provider, retries a bounded number of times for genuinely
+        # transient failures, and persists the outcome (complete/failed) -
+        # this response is the exact same InvestigationAnalysis object the
+        # endpoint has always returned; the persistence is a side effect,
+        # not a contract change.
+        _run, analysis = run_analysis(db, event_id, context, provider)
     except AIProviderError:
         duration_ms = round((time.perf_counter() - started) * 1000, 2)
         logger.warning(
@@ -116,3 +127,83 @@ def get_investigation_analysis(
         },
     )
     return analysis
+
+
+@router.get(
+    "/{event_id}/analyses",
+    response_model=list[AnalysisRunSummary],
+    summary="List previous AI analysis runs for an event",
+    response_description="Analysis runs for this event, most recent first.",
+    description=(
+        "Returns lightweight metadata for every AI analysis attempt previously made "
+        "for this event, most recent first. Never includes the full context snapshot "
+        "(see the detail endpoint for that) - only enough to display a history list."
+    ),
+)
+def list_investigation_analyses(
+    event_id: int, db: Session = Depends(get_db)
+) -> list[AnalysisRunSummary]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+
+    statement = (
+        select(AnalysisRun)
+        .where(AnalysisRun.target_event_id == event_id)
+        .order_by(AnalysisRun.requested_at.desc())
+    )
+    runs = db.scalars(statement).all()
+
+    return [
+        AnalysisRunSummary(
+            run_id=run.id,
+            target_event_id=run.target_event_id,
+            status=run.status,
+            provider=run.provider,
+            model=run.model,
+            requested_at=run.requested_at,
+            completed_at=run.completed_at,
+            retry_count=run.retry_count,
+            summary=(run.result or {}).get("summary") if run.status == "complete" else None,
+        )
+        for run in runs
+    ]
+
+
+@router.get(
+    "/{event_id}/analyses/{run_id}",
+    response_model=AnalysisRunDetail,
+    summary="Get the full historical record for one AI analysis run",
+    response_description="The full analysis run, including its context snapshot and result.",
+    description=(
+        "Returns the full historical record for one previous AI analysis run: the "
+        "exact InvestigationContext it used, and either its grounded result or its "
+        "safe error message. 404 if the event or run doesn't exist, or if the run "
+        "belongs to a different event."
+    ),
+)
+def get_investigation_analysis_run(
+    event_id: int, run_id: int, db: Session = Depends(get_db)
+) -> AnalysisRunDetail:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+
+    run = db.get(AnalysisRun, run_id)
+    if run is None or run.target_event_id != event_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Analysis run {run_id} not found for event {event_id}",
+        )
+
+    return AnalysisRunDetail(
+        run_id=run.id,
+        target_event_id=run.target_event_id,
+        status=run.status,
+        provider=run.provider,
+        model=run.model,
+        requested_at=run.requested_at,
+        completed_at=run.completed_at,
+        retry_count=run.retry_count,
+        context_snapshot=run.context_snapshot,
+        result=run.result,
+        error_message=run.error_message,
+    )

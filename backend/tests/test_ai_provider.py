@@ -794,3 +794,233 @@ def test_gemini_provider_wraps_unexpected_exception():
 
     with pytest.raises(AIProviderError):
         provider.generate(_sample_context())
+
+
+# =========================================================================
+# AIProviderError.retryable classification (Investigation Analysis
+# Persistence & History) - callers (app/services/analysis_history.py)
+# decide whether to retry based solely on this attribute, never on a
+# vendor-specific SDK exception type.
+# =========================================================================
+
+
+def test_default_retryable_is_false():
+    assert AIProviderError("message").retryable is False
+
+
+def test_anthropic_timeout_is_retryable():
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_timeout(**kwargs):
+        raise anthropic.APITimeoutError(_fake_request())
+
+    provider._client = _FakeAnthropicClient(raise_timeout)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_anthropic_connection_error_is_retryable():
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_connection_error(**kwargs):
+        raise anthropic.APIConnectionError(request=_fake_request())
+
+    provider._client = _FakeAnthropicClient(raise_connection_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_anthropic_5xx_status_is_retryable():
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_server_error(**kwargs):
+        response = httpx2.Response(500, request=_fake_request())
+        raise anthropic.APIStatusError("server error", response=response, body=None)
+
+    provider._client = _FakeAnthropicClient(raise_server_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_anthropic_4xx_status_is_not_retryable():
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_client_error(**kwargs):
+        response = httpx2.Response(404, request=_fake_request())
+        raise anthropic.APIStatusError("not found", response=response, body=None)
+
+    provider._client = _FakeAnthropicClient(raise_client_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_anthropic_authentication_error_is_not_retryable():
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_auth_error(**kwargs):
+        response = httpx2.Response(401, request=_fake_request())
+        raise anthropic.AuthenticationError("invalid x-api-key", response=response, body=None)
+
+    provider._client = _FakeAnthropicClient(raise_auth_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_anthropic_rate_limit_error_is_not_retryable():
+    # Immediate retry is not appropriate for rate limiting within a bounded,
+    # short synchronous retry window - a deliberate, documented choice.
+    provider = AnthropicProvider(api_key="test-key")
+
+    def raise_rate_limit(**kwargs):
+        response = httpx2.Response(429, request=_fake_request())
+        raise anthropic.RateLimitError("rate limited", response=response, body=None)
+
+    provider._client = _FakeAnthropicClient(raise_rate_limit)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_openai_timeout_is_retryable():
+    provider = OpenAIProvider(api_key="test-key")
+
+    def raise_timeout(**kwargs):
+        raise openai.APITimeoutError(_fake_openai_request())
+
+    provider._client = _FakeOpenAIClient(raise_timeout)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_openai_5xx_status_is_retryable():
+    provider = OpenAIProvider(api_key="test-key")
+
+    def raise_server_error(**kwargs):
+        response = httpx2.Response(500, request=_fake_openai_request())
+        raise openai.APIStatusError("server error", response=response, body=None)
+
+    provider._client = _FakeOpenAIClient(raise_server_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_openai_authentication_error_is_not_retryable():
+    provider = OpenAIProvider(api_key="test-key")
+
+    def raise_auth_error(**kwargs):
+        response = httpx2.Response(401, request=_fake_openai_request())
+        raise openai.AuthenticationError("invalid api key", response=response, body=None)
+
+    provider._client = _FakeOpenAIClient(raise_auth_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_gemini_server_error_is_retryable():
+    provider = GeminiProvider(api_key="test-key")
+
+    def raise_server_error(**kwargs):
+        raise genai_errors.ServerError(503, {"message": "model overloaded"})
+
+    provider._client = _FakeGeminiClient(raise_server_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_gemini_timeout_is_retryable():
+    provider = GeminiProvider(api_key="test-key")
+
+    def raise_timeout(**kwargs):
+        raise httpx2.TimeoutException("timed out")
+
+    provider._client = _FakeGeminiClient(raise_timeout)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_gemini_connection_error_is_retryable():
+    provider = GeminiProvider(api_key="test-key")
+
+    def raise_connection_error(**kwargs):
+        raise httpx2.ConnectError("connection refused")
+
+    provider._client = _FakeGeminiClient(raise_connection_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is True
+
+
+def test_gemini_client_error_is_not_retryable():
+    provider = GeminiProvider(api_key="test-key")
+
+    def raise_client_error(**kwargs):
+        raise genai_errors.ClientError(400, {"message": "bad request"})
+
+    provider._client = _FakeGeminiClient(raise_client_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_gemini_authentication_error_is_not_retryable():
+    provider = GeminiProvider(api_key="test-key")
+
+    def raise_auth_error(**kwargs):
+        raise genai_errors.ClientError(401, {"message": "invalid api key"})
+
+    provider._client = _FakeGeminiClient(raise_auth_error)
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+
+def test_malformed_response_is_not_retryable_for_any_provider():
+    # A response that fails to parse often reflects a schema/prompt
+    # mismatch, not a one-off network blip - conservatively not retried.
+    anthropic_provider = AnthropicProvider(api_key="test-key")
+    anthropic_provider._client = _FakeAnthropicClient(
+        lambda **kwargs: _FakeParseResponse(None)
+    )
+    with pytest.raises(AIProviderError) as exc_info:
+        anthropic_provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+    openai_provider = OpenAIProvider(api_key="test-key")
+    openai_provider._client = _FakeOpenAIClient(
+        lambda **kwargs: _FakeOpenAIParseResponse(None)
+    )
+    with pytest.raises(AIProviderError) as exc_info:
+        openai_provider.generate(_sample_context())
+    assert exc_info.value.retryable is False
+
+    gemini_provider = GeminiProvider(api_key="test-key")
+    gemini_provider._client = _FakeGeminiClient(
+        lambda **kwargs: _FakeGeminiResponse(None)
+    )
+    with pytest.raises(AIProviderError) as exc_info:
+        gemini_provider.generate(_sample_context())
+    assert exc_info.value.retryable is False

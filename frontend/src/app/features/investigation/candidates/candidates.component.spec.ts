@@ -9,6 +9,7 @@ function makeCandidate(overrides: Partial<Candidate>): Candidate {
     event_type: 'deployment',
     score: 90,
     reasons: ['Occurred 4 minutes before the incident.'],
+    reason_codes: ['temporal_proximity'],
     supporting_evidence_ids: [],
     ...overrides,
   };
@@ -117,5 +118,83 @@ describe('CandidatesComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('.empty-state')).not.toBeNull();
+  });
+
+  // --- Progressive disclosure: "why this candidate?" drill-down ---
+
+  it('collapses the reasons/evidence behind a "Why this candidate?" toggle, collapsed by default', () => {
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [makeCandidate({})]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.detectChanges();
+
+    const details: HTMLDetailsElement = fixture.nativeElement.querySelector('.candidate-details');
+    expect(details).not.toBeNull();
+    expect(details.tagName.toLowerCase()).toBe('details');
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('Why this candidate?');
+  });
+
+  it('the reasons/evidence remain queryable (present in the DOM) even while collapsed', () => {
+    // <details> without [open] is visually collapsed but still in the DOM -
+    // existing consumers/tests that inspect textContent must keep working
+    // without needing to simulate a click first.
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [makeCandidate({})]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.detectChanges();
+
+    const details: HTMLDetailsElement = fixture.nativeElement.querySelector('.candidate-details');
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain('Occurred 4 minutes before the incident.');
+  });
+
+  it('expanding the details toggle reveals the same content (open state)', () => {
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [makeCandidate({})]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.detectChanges();
+
+    const details: HTMLDetailsElement = fixture.nativeElement.querySelector('.candidate-details');
+    details.open = true;
+    fixture.detectChanges();
+
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain('Occurred 4 minutes before the incident.');
+  });
+
+  it('renders a structured reason code alongside each human-readable reason', () => {
+    const candidate = makeCandidate({
+      reasons: ['Occurred 4 minutes before the incident.', "Event type 'deployment' is considered relevant to this investigation."],
+      reason_codes: ['temporal_proximity', 'relevant_event_type'],
+    });
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [candidate]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.detectChanges();
+
+    const codes: NodeListOf<HTMLElement> =
+      fixture.nativeElement.querySelectorAll('.candidate-reasons .reason-code');
+    expect(codes.length).toBe(2);
+    expect(codes[0].getAttribute('data-code')).toBe('temporal_proximity');
+    expect(codes[0].textContent).toContain('Temporal proximity');
+    expect(codes[1].getAttribute('data-code')).toBe('relevant_event_type');
+    expect(codes[1].textContent).toContain('Relevant event type');
+  });
+
+  it('does not use causal wording anywhere in the reason code labels', () => {
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [
+      makeCandidate({
+        reasons: ['Supported by recovery evidence following rollback.'],
+        reason_codes: ['recovery_context'],
+      }),
+    ]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement.textContent as string).toLowerCase();
+    expect(text).not.toContain('caused');
+    expect(text).not.toContain('root cause:');
   });
 });

@@ -120,3 +120,144 @@ def test_duplicate_non_null_source_event_id_for_same_source_is_rejected(db_sessi
     # A failed flush leaves the session's transaction unusable until rolled
     # back - real callers (ingest_event) always do this before continuing.
     db_session.rollback()
+
+
+# --- analysis_runs (Investigation Analysis Persistence & History) ---
+
+
+def test_analysis_runs_table_has_expected_columns_and_types(db_session):
+    inspector = inspect(db_session.get_bind())
+    columns = {column["name"]: column for column in inspector.get_columns("analysis_runs")}
+
+    assert columns["target_event_id"]["nullable"] is False
+    assert columns["status"]["nullable"] is False
+    assert columns["provider"]["nullable"] is False
+    assert columns["model"]["nullable"] is False
+    assert columns["requested_at"]["nullable"] is False
+    assert columns["completed_at"]["nullable"] is True
+    assert columns["retry_count"]["nullable"] is False
+    assert columns["error_message"]["nullable"] is True
+
+    assert str(columns["context_snapshot"]["type"]).upper() == "JSONB"
+    assert columns["context_snapshot"]["nullable"] is False
+    assert str(columns["result"]["type"]).upper() == "JSONB"
+    assert columns["result"]["nullable"] is True
+
+
+def test_analysis_runs_has_foreign_key_to_events(db_session):
+    inspector = inspect(db_session.get_bind())
+    foreign_keys = inspector.get_foreign_keys("analysis_runs")
+
+    assert len(foreign_keys) == 1
+    fk = foreign_keys[0]
+    assert fk["constrained_columns"] == ["target_event_id"]
+    assert fk["referred_table"] == "events"
+    assert fk["referred_columns"] == ["id"]
+
+
+def test_analysis_runs_has_target_event_id_requested_at_index(db_session):
+    inspector = inspect(db_session.get_bind())
+    indexes = inspector.get_indexes("analysis_runs")
+    index_names = {index["name"] for index in indexes}
+
+    assert "ix_analysis_runs_target_event_id_requested_at" in index_names
+    target_index = next(
+        index
+        for index in indexes
+        if index["name"] == "ix_analysis_runs_target_event_id_requested_at"
+    )
+    assert target_index["column_names"] == ["target_event_id", "requested_at"]
+
+
+def test_analysis_runs_status_check_constraint_rejects_invalid_values(db_session):
+    from datetime import datetime, timezone
+
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.analysis_run import AnalysisRun
+    from app.models.event import Event
+
+    event = Event(
+        service="payment-service",
+        environment="production",
+        event_type="incident",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        source="application",
+        message="incident",
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(event)
+    db_session.flush()
+
+    db_session.add(
+        AnalysisRun(
+            target_event_id=event.id,
+            status="bogus",
+            provider="GeminiProvider",
+            model="gemini-3.5-flash",
+            requested_at=datetime.now(timezone.utc),
+            retry_count=0,
+            context_snapshot={},
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+    db_session.rollback()
+
+
+def test_analysis_runs_status_check_constraint_accepts_the_three_lifecycle_values(db_session):
+    from datetime import datetime, timezone
+
+    from app.models.analysis_run import AnalysisRun
+    from app.models.event import Event
+
+    event = Event(
+        service="payment-service",
+        environment="production",
+        event_type="incident",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        source="application",
+        message="incident",
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(event)
+    db_session.flush()
+
+    for status in ("pending", "complete", "failed"):
+        db_session.add(
+            AnalysisRun(
+                target_event_id=event.id,
+                status=status,
+                provider="GeminiProvider",
+                model="gemini-3.5-flash",
+                requested_at=datetime.now(timezone.utc),
+                retry_count=0,
+                context_snapshot={},
+            )
+        )
+    db_session.flush()  # would raise IntegrityError if any status were rejected
+
+
+def test_analysis_runs_rejects_a_target_event_id_that_does_not_exist(db_session):
+    from datetime import datetime, timezone
+
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.analysis_run import AnalysisRun
+
+    db_session.add(
+        AnalysisRun(
+            target_event_id=999999999,
+            status="pending",
+            provider="GeminiProvider",
+            model="gemini-3.5-flash",
+            requested_at=datetime.now(timezone.utc),
+            retry_count=0,
+            context_snapshot={},
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+    db_session.rollback()

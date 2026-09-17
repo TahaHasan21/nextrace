@@ -518,6 +518,113 @@ def test_reasons_contain_no_causal_wording():
             assert forbidden not in lowered
 
 
+# --- Structured reason codes ---
+
+
+def test_reason_codes_are_index_aligned_with_reasons():
+    target = _event(1, event_type="incident", timestamp=BASE_TIME)
+    candidate = _event(
+        2, event_type="deployment", timestamp=BASE_TIME - timedelta(minutes=1)
+    )
+    evidence = [
+        EvidenceItem(
+            type="sequence_relationship",
+            description="deployment -> incident",
+            event_ids=[2, 1],
+        ),
+        EvidenceItem(
+            type="recovery_relationship",
+            description="rollback -> recovery after incident",
+            event_ids=[1, 5, 6],
+        ),
+    ]
+
+    [result] = generate_candidates(target, [candidate, target], evidence)
+
+    assert len(result.reason_codes) == len(result.reasons)
+    assert result.reason_codes == [
+        "temporal_proximity",
+        "relevant_event_type",
+        "evidence_sequence",
+        "recovery_context",
+    ]
+
+
+def test_temporal_evidence_reason_code_is_distinct_from_sequence_evidence():
+    target = _event(1, event_type="incident", timestamp=BASE_TIME)
+    candidate = _event(
+        2, event_type="unknown_type", timestamp=BASE_TIME - timedelta(minutes=15)
+    )
+    evidence = [
+        EvidenceItem(
+            type="temporal_proximity",
+            description="unknown_type before incident",
+            event_ids=[2, 1],
+        )
+    ]
+
+    [result] = generate_candidates(target, [candidate, target], evidence)
+
+    assert result.reason_codes == ["temporal_evidence"]
+
+
+def test_reason_codes_use_only_the_documented_stable_set():
+    timeline = _demo_timeline()
+    by_type = {event.event_type: event for event in timeline}
+    target = by_type["incident"]
+
+    evidence = generate_evidence(timeline)
+    candidates = generate_candidates(target, timeline, evidence)
+
+    known_codes = {
+        "temporal_proximity",
+        "relevant_event_type",
+        "evidence_sequence",
+        "temporal_evidence",
+        "recovery_context",
+    }
+    assert candidates  # sanity: this scenario does produce candidates
+    for candidate in candidates:
+        assert candidate.reason_codes  # every candidate has at least one reason
+        for code in candidate.reason_codes:
+            assert code in known_codes
+
+
+def test_reason_codes_never_contain_causal_wording():
+    # Codes are fixed identifiers, not free text, but this guards against
+    # ever repurposing them as human-readable strings later.
+    timeline = _demo_timeline()
+    by_type = {event.event_type: event for event in timeline}
+    target = by_type["incident"]
+    evidence = generate_evidence(timeline)
+    candidates = generate_candidates(target, timeline, evidence)
+
+    for candidate in candidates:
+        for code in candidate.reason_codes:
+            lowered = code.lower()
+            for forbidden in FORBIDDEN_WORDS:
+                assert forbidden not in lowered
+
+
+def test_generate_candidates_reason_codes_are_deterministic():
+    target = _event(1, event_type="incident", timestamp=BASE_TIME)
+    candidate = _event(
+        2, event_type="deployment", timestamp=BASE_TIME - timedelta(minutes=1)
+    )
+    evidence = [
+        EvidenceItem(
+            type="sequence_relationship",
+            description="deployment -> incident",
+            event_ids=[2, 1],
+        )
+    ]
+
+    first_run = generate_candidates(target, [candidate, target], evidence)
+    second_run = generate_candidates(target, [candidate, target], evidence)
+
+    assert [c.reason_codes for c in first_run] == [c.reason_codes for c in second_run]
+
+
 # --- Maximum score ---
 
 

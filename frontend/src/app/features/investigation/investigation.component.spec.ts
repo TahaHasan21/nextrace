@@ -3,7 +3,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { InvestigationService } from '../../core/services/investigation.service';
-import { Investigation, InvestigationAnalysis } from '../../models/investigation.models';
+import {
+  AnalysisRunDetail,
+  AnalysisRunSummary,
+  Investigation,
+  InvestigationAnalysis,
+} from '../../models/investigation.models';
 import { InvestigationComponent } from './investigation.component';
 
 class FakeInvestigationService {
@@ -33,6 +38,16 @@ class FakeInvestigationService {
 
   queueAnalysisResult(fn: () => Observable<InvestigationAnalysis>): void {
     this.nextAnalysisCall = fn;
+  }
+
+  // The AI panel loads its own history automatically on init; these tests
+  // don't exercise history behavior, so an empty list is a safe default.
+  listAnalysisRuns(_eventId: number): Observable<AnalysisRunSummary[]> {
+    return of([]);
+  }
+
+  getAnalysisRun(_eventId: number, _runId: number): Observable<AnalysisRunDetail> {
+    return new Subject<AnalysisRunDetail>().asObservable();
   }
 }
 

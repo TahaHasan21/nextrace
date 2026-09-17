@@ -16,8 +16,9 @@
             <span class="evidence-id" [title]="item.id">{{ item.id }}</span>
           </div>
           <p class="evidence-description">{{ item.description }}</p>
-          <div class="related-events">
-            <span class="related-events-label">Related events</span>
+
+          <details class="evidence-details related-events">
+            <summary>Supporting events</summary>
             <ul class="related-events-list">
               @for (related of relatedEvents(item); track related.id) {
                 <li>
@@ -28,7 +29,7 @@
                 </li>
               }
             </ul>
-          </div>
+          </details>
         </li>
       }
     </ul>

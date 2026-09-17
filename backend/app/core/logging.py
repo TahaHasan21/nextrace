@@ -28,6 +28,9 @@ _STRUCTURED_FIELDS = (
     "model",
     "event_created",
     "source",
+    "delivery_id",
+    "github_event_type",
+    "environment",
 )
 
 

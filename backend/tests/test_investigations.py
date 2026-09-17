@@ -206,6 +206,7 @@ def test_investigation_candidate_fields_present(client):
         "event_type",
         "score",
         "reasons",
+        "reason_codes",
         "supporting_evidence_ids",
     }
 
@@ -407,6 +408,30 @@ def test_investigation_evidence_items_include_stable_versioned_ids(client):
         assert isinstance(evidence_id, str)
         assert evidence_id.startswith("ev1_")
     assert len(ids) == len(set(ids))
+
+
+def test_investigation_candidates_include_structured_reason_codes(client, db_session):
+    from app.demo.incident import persist_demo_incident
+
+    persisted = persist_demo_incident(db_session)
+    incident_event = next(event for event in persisted if event.event_type == "incident")
+
+    body = client.get(f"/investigations/{incident_event.id}").json()
+
+    assert body["candidates"], "expected at least one candidate"
+    known_codes = {
+        "temporal_proximity",
+        "relevant_event_type",
+        "evidence_sequence",
+        "temporal_evidence",
+        "recovery_context",
+    }
+    for candidate in body["candidates"]:
+        assert "reason_codes" in candidate
+        # Index-aligned with reasons: same length, one code per reason.
+        assert len(candidate["reason_codes"]) == len(candidate["reasons"])
+        for code in candidate["reason_codes"]:
+            assert code in known_codes
 
 
 def test_investigation_candidate_supporting_evidence_ids_reference_real_evidence_not_events(

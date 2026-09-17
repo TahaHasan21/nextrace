@@ -1,6 +1,7 @@
 import os
 
 from app.db.base import Base
+from app.models.analysis_run import AnalysisRun  # noqa: F401
 from app.models.event import Event  # noqa: F401
 from logging.config import fileConfig
 

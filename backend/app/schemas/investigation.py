@@ -55,6 +55,14 @@ class CandidateRead(BaseModel):
     reasons: list[str] = Field(
         description="Factual, non-causal reasons explaining the score's components."
     )
+    reason_codes: list[str] = Field(
+        description=(
+            "Stable structured code for each entry in 'reasons' (same length, same "
+            "order) - one of 'temporal_proximity', 'relevant_event_type', "
+            "'evidence_sequence', 'temporal_evidence', 'recovery_context'. Lets a "
+            "client render a category without parsing the reason text."
+        )
+    )
     supporting_evidence_ids: list[str] = Field(
         description=(
             "IDs of the EvidenceItem objects (see EvidenceRead.id) supporting this "

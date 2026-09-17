@@ -44,7 +44,18 @@ class AIProviderError(Exception):
 
     The message is always safe to return to an API client - it never
     contains raw provider exception text, API keys, or other credentials.
+
+    `retryable` classifies the failure for callers that want to retry a
+    bounded number of times (see app/services/analysis_history.py) without
+    needing to know any vendor-specific SDK exception type: True only for
+    failures that are genuinely transient (timeout, connection failure,
+    provider 5xx) - never for authentication, configuration, rate-limit, or
+    malformed-request failures, which retrying would not fix.
     """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class AIProvider(ABC):
@@ -82,16 +93,17 @@ class AnthropicProvider(AIProvider):
                 output_format=InvestigationAnalysis,
             )
         except anthropic.APITimeoutError as exc:
-            raise AIProviderError("AI provider request timed out.") from exc
+            raise AIProviderError("AI provider request timed out.", retryable=True) from exc
         except anthropic.AuthenticationError as exc:
             raise AIProviderError("AI provider rejected the configured credentials.") from exc
         except anthropic.RateLimitError as exc:
             raise AIProviderError("AI provider rate limit exceeded. Try again shortly.") from exc
         except anthropic.APIConnectionError as exc:
-            raise AIProviderError("Could not connect to the AI provider.") from exc
+            raise AIProviderError("Could not connect to the AI provider.", retryable=True) from exc
         except anthropic.APIStatusError as exc:
             raise AIProviderError(
-                f"AI provider returned an error (status {exc.status_code})."
+                f"AI provider returned an error (status {exc.status_code}).",
+                retryable=exc.status_code >= 500,
             ) from exc
         except Exception as exc:
             raise AIProviderError("AI provider request failed.") from exc
@@ -130,16 +142,17 @@ class OpenAIProvider(AIProvider):
                 text_format=InvestigationAnalysis,
             )
         except openai.APITimeoutError as exc:
-            raise AIProviderError("AI provider request timed out.") from exc
+            raise AIProviderError("AI provider request timed out.", retryable=True) from exc
         except openai.AuthenticationError as exc:
             raise AIProviderError("AI provider rejected the configured credentials.") from exc
         except openai.RateLimitError as exc:
             raise AIProviderError("AI provider rate limit exceeded. Try again shortly.") from exc
         except openai.APIConnectionError as exc:
-            raise AIProviderError("Could not connect to the AI provider.") from exc
+            raise AIProviderError("Could not connect to the AI provider.", retryable=True) from exc
         except openai.APIStatusError as exc:
             raise AIProviderError(
-                f"AI provider returned an error (status {exc.status_code})."
+                f"AI provider returned an error (status {exc.status_code}).",
+                retryable=exc.status_code >= 500,
             ) from exc
         except Exception as exc:
             raise AIProviderError("AI provider request failed.") from exc
@@ -184,6 +197,8 @@ class GeminiProvider(AIProvider):
                 ),
             )
         except genai_errors.ClientError as exc:
+            # All 4xx - never retryable (auth, rate limit, and any other
+            # client-side/malformed-request status alike).
             if exc.code in _GEMINI_AUTH_STATUS_CODES:
                 raise AIProviderError(
                     "AI provider rejected the configured credentials."
@@ -196,13 +211,15 @@ class GeminiProvider(AIProvider):
                 f"AI provider returned an error (status {exc.code})."
             ) from exc
         except genai_errors.ServerError as exc:
+            # 5xx - e.g. "model is currently experiencing high demand",
+            # empirically observed from this exact provider - transient.
             raise AIProviderError(
-                f"AI provider returned an error (status {exc.code})."
+                f"AI provider returned an error (status {exc.code}).", retryable=True
             ) from exc
         except httpx2.TimeoutException as exc:
-            raise AIProviderError("AI provider request timed out.") from exc
+            raise AIProviderError("AI provider request timed out.", retryable=True) from exc
         except httpx2.RequestError as exc:
-            raise AIProviderError("Could not connect to the AI provider.") from exc
+            raise AIProviderError("Could not connect to the AI provider.", retryable=True) from exc
         except genai_errors.APIError as exc:
             raise AIProviderError(
                 f"AI provider returned an error (status {exc.code})."

@@ -41,6 +41,7 @@ _ensure_test_database_exists(TEST_DATABASE_URL)
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.analysis_run import AnalysisRun  # noqa: E402,F401
 from app.models.event import Event  # noqa: E402,F401
 
 test_engine = create_engine(TEST_DATABASE_URL)

@@ -9,10 +9,27 @@ const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   recovery_relationship: 'Recovery relationship',
 };
 
+/** Short, human-readable labels for the backend's stable reason codes
+ * (CandidateRead.reason_codes) - purely presentational; the underlying
+ * code is still shown so the mapping is never opaque. */
+const REASON_CODE_LABELS: Record<string, string> = {
+  temporal_proximity: 'Temporal proximity',
+  relevant_event_type: 'Relevant event type',
+  evidence_sequence: 'Evidence sequence',
+  temporal_evidence: 'Temporal evidence',
+  recovery_context: 'Recovery context',
+};
+
 export interface SupportingEvidenceSummary {
   id: string;
   label: string;
   description: string;
+}
+
+export interface CandidateReasonSummary {
+  code: string;
+  label: string;
+  text: string;
 }
 
 @Component({
@@ -28,6 +45,17 @@ export class CandidatesComponent {
 
   protected labelFor(eventType: string): string {
     return humanizeEventType(eventType);
+  }
+
+  /** Zips each reason with its stable structured code - index-aligned,
+   * same length, per the backend's CandidateRead contract. Falls back to
+   * showing the raw code (or nothing) if it's ever missing/unrecognized,
+   * rather than hiding the reason text. */
+  protected candidateReasons(candidate: Candidate): CandidateReasonSummary[] {
+    return candidate.reasons.map((text, index) => {
+      const code = candidate.reason_codes?.[index] ?? '';
+      return { code, label: REASON_CODE_LABELS[code] ?? code, text };
+    });
   }
 
   /** supporting_evidence_ids are references to Evidence.id - resolved here

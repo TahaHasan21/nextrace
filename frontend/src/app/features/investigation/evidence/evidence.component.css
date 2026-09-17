@@ -46,22 +46,34 @@
   margin-bottom: 6px;
 }
 
-.related-events {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+.evidence-details {
+  margin-top: 8px;
 }
 
-.related-events-label {
+.evidence-details summary {
   font-size: 11px;
-  color: var(--color-text-muted);
-  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-accent-strong);
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.evidence-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.evidence-details summary::before {
+  content: '+ ';
+}
+
+.evidence-details[open] summary::before {
+  content: '- ';
 }
 
 .related-events-list {
   list-style: none;
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;

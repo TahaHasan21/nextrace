@@ -169,4 +169,53 @@ describe('EvidenceComponent', () => {
     const entries = fixture.nativeElement.querySelectorAll('.related-events-list li');
     expect(entries.length).toBe(1);
   });
+
+  // --- Progressive disclosure: "supporting events" drill-down ---
+
+  it('collapses supporting events behind a toggle, collapsed by default', () => {
+    const timeline: NextraceEvent[] = [
+      makeEvent({ id: 21, event_type: 'deployment' }),
+      makeEvent({ id: 24, event_type: 'error_spike' }),
+    ];
+    const items: Evidence[] = [
+      {
+        id: 'ev1_h8h8h8h8h8h8h8h8',
+        type: 'sequence_relationship',
+        description: 'A deployment was followed by an error_spike.',
+        event_ids: [21, 24],
+      },
+    ];
+
+    const fixture = TestBed.createComponent(EvidenceComponent);
+    fixture.componentRef.setInput('items', items);
+    fixture.componentRef.setInput('timeline', timeline);
+    fixture.detectChanges();
+
+    const details: HTMLDetailsElement = fixture.nativeElement.querySelector('.evidence-details');
+    expect(details).not.toBeNull();
+    expect(details.tagName.toLowerCase()).toBe('details');
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('Supporting events');
+  });
+
+  it('the supporting events remain queryable (present in the DOM) even while collapsed', () => {
+    const timeline: NextraceEvent[] = [makeEvent({ id: 1, event_type: 'config_change' })];
+    const items: Evidence[] = [
+      {
+        id: 'ev1_i9i9i9i9i9i9i9i9',
+        type: 'sequence_relationship',
+        description: 'desc',
+        event_ids: [1],
+      },
+    ];
+
+    const fixture = TestBed.createComponent(EvidenceComponent);
+    fixture.componentRef.setInput('items', items);
+    fixture.componentRef.setInput('timeline', timeline);
+    fixture.detectChanges();
+
+    const details: HTMLDetailsElement = fixture.nativeElement.querySelector('.evidence-details');
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain('Config Change');
+  });
 });

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from app.models.event import Event
@@ -32,6 +32,18 @@ RECOVERY_SUPPORT_POINTS = 15
 # explicitly names that event's own id in a recovery relationship.
 RECOVERY_ELIGIBLE_EVENT_TYPES = ("deployment", "config_change")
 
+# Stable, structured codes for each reason a candidate's score can include -
+# one per entry in `reasons` (same index, same order). These exist so a
+# frontend can render a category (badge/icon) without parsing prose text;
+# the free-text `reasons` entries remain the human-readable explanation.
+# Every code here corresponds to an actual scored component below - none of
+# these are invented for display purposes only.
+REASON_CODE_TEMPORAL_PROXIMITY = "temporal_proximity"
+REASON_CODE_RELEVANT_EVENT_TYPE = "relevant_event_type"
+REASON_CODE_EVIDENCE_SEQUENCE = "evidence_sequence"
+REASON_CODE_TEMPORAL_EVIDENCE = "temporal_evidence"
+REASON_CODE_RECOVERY_CONTEXT = "recovery_context"
+
 
 @dataclass
 class CandidateResult:
@@ -42,6 +54,13 @@ class CandidateResult:
     # IDs of the supporting EvidenceItem objects (EvidenceItem.id) - never
     # event IDs. Deduplicated and sorted deterministically.
     supporting_evidence_ids: list[str]
+    # Stable structured code for each entry in `reasons` (same length, same
+    # order) - e.g. "temporal_proximity", "relevant_event_type". Lets the
+    # frontend render a category without parsing the reason text itself.
+    # Defaulted (rather than required) so existing hand-built test fixtures
+    # that only care about reasons/score don't all need updating -
+    # generate_candidates() itself always supplies this explicitly.
+    reason_codes: list[str] = field(default_factory=list)
 
 
 def _is_eligible_candidate(event: Event, target: Event) -> bool:
@@ -53,39 +72,50 @@ def _is_eligible_candidate(event: Event, target: Event) -> bool:
     )
 
 
-def _temporal_score_and_reason(event: Event, target: Event) -> tuple[int, str | None]:
+def _temporal_score_and_reason(event: Event, target: Event) -> tuple[int, str | None, str | None]:
     gap = target.timestamp - event.timestamp
     for bucket_limit, points in TEMPORAL_PROXIMITY_BUCKETS:
         if gap <= bucket_limit:
             minutes = max(1, round(gap.total_seconds() / 60))
             unit = "minute" if minutes == 1 else "minutes"
             reason = f"Occurred {minutes} {unit} before the {target.event_type}."
-            return points, reason
-    return 0, None
+            return points, reason, REASON_CODE_TEMPORAL_PROXIMITY
+    return 0, None, None
 
 
-def _relevance_score_and_reason(event: Event) -> tuple[int, str | None]:
+def _relevance_score_and_reason(event: Event) -> tuple[int, str | None, str | None]:
     points = EVENT_RELEVANCE_SCORES.get(event.event_type, 0)
     if points == 0:
-        return 0, None
+        return 0, None, None
     reason = (
         f"Event type '{event.event_type}' is considered relevant to this investigation."
     )
-    return points, reason
+    return points, reason, REASON_CODE_RELEVANT_EVENT_TYPE
 
 
 def _evidence_relationship_score(
     event: Event,
     evidence: list[EvidenceItem],
     timeline_by_id: dict[int, Event],
-) -> tuple[int, list[str], set[str]]:
+) -> tuple[int, list[str], list[str], set[str]]:
     score = 0
     reasons: list[str] = []
+    reason_codes: list[str] = []
     supporting_evidence_ids: set[str] = set()
 
-    for evidence_type, points, label in (
-        ("sequence_relationship", SEQUENCE_EVIDENCE_POINTS, "sequence relationship"),
-        ("temporal_proximity", TEMPORAL_EVIDENCE_POINTS, "temporal proximity evidence"),
+    for evidence_type, points, label, code in (
+        (
+            "sequence_relationship",
+            SEQUENCE_EVIDENCE_POINTS,
+            "sequence relationship",
+            REASON_CODE_EVIDENCE_SEQUENCE,
+        ),
+        (
+            "temporal_proximity",
+            TEMPORAL_EVIDENCE_POINTS,
+            "temporal proximity evidence",
+            REASON_CODE_TEMPORAL_EVIDENCE,
+        ),
     ):
         related_ids: set[int] = set()
         matching_item_ids: set[str] = set()
@@ -109,17 +139,18 @@ def _evidence_relationship_score(
         reasons.append(
             f"Supported by a {label} relating it to the later '{representative_type}' event."
         )
+        reason_codes.append(code)
         supporting_evidence_ids.update(matching_item_ids)
 
-    return score, reasons, supporting_evidence_ids
+    return score, reasons, reason_codes, supporting_evidence_ids
 
 
 def _recovery_score_and_reason(
     event: Event, evidence: list[EvidenceItem]
-) -> tuple[int, str | None, set[str]]:
+) -> tuple[int, str | None, str | None, set[str]]:
     recovery_items = [item for item in evidence if item.type == "recovery_relationship"]
     if not recovery_items:
-        return 0, None, set()
+        return 0, None, None, set()
 
     if event.event_type in RECOVERY_ELIGIBLE_EVENT_TYPES:
         # A change event preceding a resolved incident earns this signal
@@ -129,11 +160,11 @@ def _recovery_score_and_reason(
     else:
         matching = [item for item in recovery_items if event.id in item.event_ids]
         if not matching:
-            return 0, None, set()
+            return 0, None, None, set()
 
     supporting_evidence_ids = {item.id for item in matching}
     reason = "Supported by recovery evidence following rollback."
-    return RECOVERY_SUPPORT_POINTS, reason, supporting_evidence_ids
+    return RECOVERY_SUPPORT_POINTS, reason, REASON_CODE_RECOVERY_CONTEXT, supporting_evidence_ids
 
 
 def generate_candidates(
@@ -156,23 +187,33 @@ def generate_candidates(
 
     results = []
     for event in candidates:
-        temporal_score, temporal_reason = _temporal_score_and_reason(event, target_event)
-        relevance_score, relevance_reason = _relevance_score_and_reason(event)
-        evidence_score, evidence_reasons, evidence_item_ids = _evidence_relationship_score(
-            event, evidence, timeline_by_id
+        temporal_score, temporal_reason, temporal_code = _temporal_score_and_reason(
+            event, target_event
         )
-        recovery_score, recovery_reason, recovery_item_ids = _recovery_score_and_reason(
-            event, evidence
+        relevance_score, relevance_reason, relevance_code = _relevance_score_and_reason(event)
+        (
+            evidence_score,
+            evidence_reasons,
+            evidence_reason_codes,
+            evidence_item_ids,
+        ) = _evidence_relationship_score(event, evidence, timeline_by_id)
+        recovery_score, recovery_reason, recovery_code, recovery_item_ids = (
+            _recovery_score_and_reason(event, evidence)
         )
 
         reasons: list[str] = []
+        reason_codes: list[str] = []
         if temporal_reason:
             reasons.append(temporal_reason)
+            reason_codes.append(temporal_code)
         if relevance_reason:
             reasons.append(relevance_reason)
+            reason_codes.append(relevance_code)
         reasons.extend(evidence_reasons)
+        reason_codes.extend(evidence_reason_codes)
         if recovery_reason:
             reasons.append(recovery_reason)
+            reason_codes.append(recovery_code)
 
         results.append(
             CandidateResult(
@@ -180,6 +221,7 @@ def generate_candidates(
                 event_type=event.event_type,
                 score=temporal_score + relevance_score + evidence_score + recovery_score,
                 reasons=reasons,
+                reason_codes=reason_codes,
                 supporting_evidence_ids=sorted(evidence_item_ids | recovery_item_ids),
             )
         )

@@ -37,8 +37,13 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-anthropic}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-claude-opus-5}
+      # GitHub webhook signature verification is optional the same way AI
+      # is: an empty secret still starts the backend, but POST
+      # /webhooks/github returns a controlled 503 until it's configured -
+      # it never falls back to accepting unsigned deliveries.
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
     ports:
-      - "8000:8000"
+      - "8080:8000"
 
   frontend:
     build:
@@ -48,7 +53,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "4200:80"
+      - "4300:80"
 
 volumes:
   postgres_data:

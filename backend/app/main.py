@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.events import router as events_router
 from app.api.investigations import router as investigations_router
+from app.api.webhooks.github import router as github_webhook_router
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestIdMiddleware
 from app.db.session import get_db
@@ -23,6 +24,7 @@ app.add_middleware(RequestIdMiddleware)
 
 app.include_router(events_router)
 app.include_router(investigations_router)
+app.include_router(github_webhook_router)
 
 
 @app.exception_handler(AIProviderError)

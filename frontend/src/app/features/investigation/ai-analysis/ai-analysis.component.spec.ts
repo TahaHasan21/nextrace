@@ -3,12 +3,20 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { InvestigationService } from '../../../core/services/investigation.service';
-import { InvestigationAnalysis } from '../../../models/investigation.models';
+import {
+  AnalysisRunDetail,
+  AnalysisRunSummary,
+  InvestigationAnalysis,
+} from '../../../models/investigation.models';
 import { AiAnalysisComponent } from './ai-analysis.component';
 
 class FakeInvestigationService {
   private nextCall: (() => Observable<InvestigationAnalysis>) | null = null;
+  private nextHistoryCall: (() => Observable<AnalysisRunSummary[]>) | null = null;
+  private nextDetailCall: (() => Observable<AnalysisRunDetail>) | null = null;
   public calls: number[] = [];
+  public historyCalls: number[] = [];
+  public detailCalls: Array<[number, number]> = [];
 
   analyzeInvestigation(eventId: number): Observable<InvestigationAnalysis> {
     this.calls.push(eventId);
@@ -20,6 +28,30 @@ class FakeInvestigationService {
 
   queueResult(fn: () => Observable<InvestigationAnalysis>): void {
     this.nextCall = fn;
+  }
+
+  listAnalysisRuns(eventId: number): Observable<AnalysisRunSummary[]> {
+    this.historyCalls.push(eventId);
+    if (this.nextHistoryCall) {
+      return this.nextHistoryCall();
+    }
+    return of([]);
+  }
+
+  queueHistory(fn: () => Observable<AnalysisRunSummary[]>): void {
+    this.nextHistoryCall = fn;
+  }
+
+  getAnalysisRun(eventId: number, runId: number): Observable<AnalysisRunDetail> {
+    this.detailCalls.push([eventId, runId]);
+    if (this.nextDetailCall) {
+      return this.nextDetailCall();
+    }
+    return new Subject<AnalysisRunDetail>().asObservable();
+  }
+
+  queueDetail(fn: () => Observable<AnalysisRunDetail>): void {
+    this.nextDetailCall = fn;
   }
 }
 
@@ -268,5 +300,162 @@ describe('AiAnalysisComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('investigative aid, not proof of causation');
+  });
+
+  describe('previous analyses (history)', () => {
+    const sampleRun: AnalysisRunSummary = {
+      run_id: 7,
+      target_event_id: 5,
+      status: 'complete',
+      provider: 'GeminiProvider',
+      model: 'gemini-3.5-flash',
+      requested_at: '2026-09-12T10:00:00Z',
+      completed_at: '2026-09-12T10:00:05Z',
+      retry_count: 0,
+      summary: 'A grounded summary.',
+    };
+
+    const failedRun: AnalysisRunSummary = {
+      run_id: 8,
+      target_event_id: 5,
+      status: 'failed',
+      provider: 'GeminiProvider',
+      model: 'gemini-3.5-flash',
+      requested_at: '2026-09-11T09:00:00Z',
+      completed_at: '2026-09-11T09:00:02Z',
+      retry_count: 1,
+      summary: null,
+    };
+
+    it('loads history automatically on init, without triggering a real analysis call', () => {
+      fakeService.queueHistory(() => of([sampleRun]));
+
+      fixture.detectChanges();
+
+      expect(fakeService.historyCalls).toEqual([5]);
+      expect(fakeService.calls.length).toBe(0);
+    });
+
+    it('shows an empty state when there is no previous history', () => {
+      fakeService.queueHistory(() => of([]));
+
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.history-details');
+      expect(details.textContent).toContain('No previous analyses for this event yet.');
+    });
+
+    it('lists successful runs with their metadata', () => {
+      fakeService.queueHistory(() => of([sampleRun]));
+
+      fixture.detectChanges();
+
+      const item: HTMLElement = fixture.nativeElement.querySelector('.history-item');
+      expect(item.textContent).toContain('GeminiProvider / gemini-3.5-flash');
+      const status = item.querySelector('.history-status') as HTMLElement;
+      expect(status.textContent?.trim()).toBe('complete');
+    });
+
+    it('lists failed runs, including their retry count', () => {
+      fakeService.queueHistory(() => of([failedRun]));
+
+      fixture.detectChanges();
+
+      const item: HTMLElement = fixture.nativeElement.querySelector('.history-item');
+      const status = item.querySelector('.history-status') as HTMLElement;
+      expect(status.textContent?.trim()).toBe('failed');
+      expect(item.textContent).toContain('1 retry');
+    });
+
+    it('shows an error state when the history request fails', () => {
+      fakeService.queueHistory(() => throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.history-details').textContent).toContain(
+        'Could not load previous analyses.',
+      );
+    });
+
+    it('fetches and displays the full result when a completed run is selected', () => {
+      fakeService.queueHistory(() => of([sampleRun]));
+      fixture.detectChanges();
+
+      fakeService.queueDetail(() =>
+        of({
+          ...sampleRun,
+          context_snapshot: {},
+          result: sampleAnalysis,
+          error_message: null,
+        }),
+      );
+
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.history-item-toggle');
+      toggle.click();
+      fixture.detectChanges();
+
+      expect(fakeService.detailCalls).toEqual([[5, 7]]);
+      const detail = fixture.nativeElement.querySelector('.history-run-detail');
+      expect(detail.textContent).toContain(sampleAnalysis.summary);
+    });
+
+    it('shows the safe error message when a failed run is selected', () => {
+      fakeService.queueHistory(() => of([failedRun]));
+      fixture.detectChanges();
+
+      fakeService.queueDetail(() =>
+        of({
+          ...failedRun,
+          context_snapshot: {},
+          result: null,
+          error_message: 'AI analysis is not available right now.',
+        }),
+      );
+
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.history-item-toggle');
+      toggle.click();
+      fixture.detectChanges();
+
+      const detail = fixture.nativeElement.querySelector('.history-run-detail');
+      expect(detail.textContent).toContain('AI analysis is not available right now.');
+    });
+
+    it('collapses the run detail when toggled again', () => {
+      fakeService.queueHistory(() => of([sampleRun]));
+      fixture.detectChanges();
+      fakeService.queueDetail(() => of({ ...sampleRun, context_snapshot: {}, result: sampleAnalysis, error_message: null }));
+
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.history-item-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.history-run-detail')).not.toBeNull();
+
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.history-run-detail')).toBeNull();
+    });
+
+    it('reloads history after a new analysis completes', () => {
+      fakeService.queueHistory(() => of([]));
+      fixture.detectChanges();
+
+      fakeService.queueResult(() => of(sampleAnalysis));
+      fakeService.queueHistory(() => of([sampleRun]));
+      clickAnalyze();
+
+      expect(fakeService.historyCalls).toEqual([5, 5]);
+      expect(fixture.nativeElement.querySelector('.history-item')).not.toBeNull();
+    });
+
+    it('reloads history when the event id changes', () => {
+      fakeService.queueHistory(() => of([]));
+      fixture.detectChanges();
+
+      fakeService.queueHistory(() => of([sampleRun]));
+      fixture.componentRef.setInput('eventId', 9);
+      fixture.detectChanges();
+
+      expect(fakeService.historyCalls).toEqual([5, 9]);
+    });
   });
 });

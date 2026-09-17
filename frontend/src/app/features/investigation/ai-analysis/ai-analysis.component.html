@@ -116,4 +116,76 @@
       </button>
     </div>
   }
+
+  <details class="history-details">
+    <summary>Previous analyses</summary>
+
+    @switch (historyState()) {
+      @case ('loading') {
+        <p class="ai-state">Loading previous analyses&hellip;</p>
+      }
+      @case ('error') {
+        <p class="ai-state ai-state--error">{{ historyErrorMessage() }}</p>
+      }
+      @case ('success') {
+        @if (history().length === 0) {
+          <p class="empty-state">No previous analyses for this event yet.</p>
+        } @else {
+          <ul class="history-list">
+            @for (run of history(); track run.run_id) {
+              <li class="history-item">
+                <button
+                  type="button"
+                  class="history-item-toggle"
+                  (click)="toggleHistoryRun(run)"
+                >
+                  <span class="history-date">{{ run.requested_at | date: "MMM d, y HH:mm" : 'UTC' }} UTC</span>
+                  <span class="history-provider">{{ run.provider }} / {{ run.model }}</span>
+                  <span class="history-status" [attr.data-status]="run.status">{{ run.status }}</span>
+                  @if (run.retry_count > 0) {
+                    <span class="history-retries">
+                      {{ run.retry_count }} {{ run.retry_count === 1 ? 'retry' : 'retries' }}
+                    </span>
+                  }
+                </button>
+
+                @if (selectedRunId() === run.run_id) {
+                  <div class="history-run-detail">
+                    @if (selectedRunError()) {
+                      <p class="ai-state ai-state--error">{{ selectedRunError() }}</p>
+                    } @else if (selectedRun(); as detail) {
+                      @if (detail.status === 'failed') {
+                        <p class="ai-state ai-state--error">{{ detail.error_message }}</p>
+                      } @else if (detail.result; as result) {
+                        <p class="history-run-summary">{{ result.summary }}</p>
+                        @if (result.primary_candidate) {
+                          <p class="ai-candidate-line">
+                            Primary candidate: {{ labelFor(result.primary_candidate.event_type) }}
+                            <span class="ai-candidate-id">#{{ result.primary_candidate.event_id }}</span>
+                          </p>
+                        } @else {
+                          <p class="empty-state">
+                            No primary candidate was established with sufficient evidence.
+                          </p>
+                        }
+                        @if (result.uncertainties.length > 0) {
+                          <ul class="history-run-uncertainties">
+                            @for (item of result.uncertainties; track item) {
+                              <li>{{ item }}</li>
+                            }
+                          </ul>
+                        }
+                      }
+                    } @else {
+                      <p class="ai-state">Loading&hellip;</p>
+                    }
+                  </div>
+                }
+              </li>
+            }
+          </ul>
+        }
+      }
+    }
+  </details>
 </section>

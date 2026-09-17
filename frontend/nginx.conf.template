@@ -1,0 +1,57 @@
+# Templated at container startup (not at request time) by the official
+# nginx image's built-in envsubst-on-templates entrypoint script: any
+# /etc/nginx/templates/*.template file is rendered to
+# /etc/nginx/conf.d/<name> once, before nginx starts, substituting only
+# environment variables that are actually set (see docker-entrypoint.sh
+# in the nginx:1.27-alpine base image). nginx itself never sees
+# ${BACKEND_UPSTREAM} - by the time it parses the config, envsubst has
+# already replaced it with a plain literal (e.g. "backend:8000"), so this
+# is a normal static proxy_pass, not an nginx runtime variable - no
+# `resolver` directive is needed, and the DNS-at-request-time caveats of
+# using a variable directly in proxy_pass don't apply here.
+#
+# BACKEND_UPSTREAM defaults to "backend:8000" (see the Dockerfile's ENV)
+# so local Docker Compose behaves exactly as before with zero required
+# configuration; overriding it (e.g. on ECS) needs no image rebuild.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Proxy API routes to the configured backend destination - never
+    # hardcode a hostname here.
+    location /investigations {
+        proxy_pass http://${BACKEND_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /events {
+        proxy_pass http://${BACKEND_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /health {
+        proxy_pass http://${BACKEND_UPSTREAM};
+    }
+
+    location /ready {
+        proxy_pass http://${BACKEND_UPSTREAM};
+    }
+
+    # Deliberately NOT proxied: /webhooks/github is never routed through
+    # this container. GitHub traffic reaches the backend directly (or, on
+    # AWS, via ALB path-based routing straight to the backend target
+    # group) - see backend deployment notes. Falling through to the SPA
+    # location below and returning index.html for an unmatched /webhooks
+    # path is intentional, not an oversight.
+
+    # Angular single-page app - any other route falls back to index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
