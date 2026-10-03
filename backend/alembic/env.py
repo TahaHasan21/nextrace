@@ -19,7 +19,11 @@ config = context.config
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    # Alembic's Config is a ConfigParser with %-interpolation, so a literal
+    # "%" (e.g. a URL-encoded password like "p%40ss") must be doubled to
+    # "%%" here. get_main_option()/get_section() un-escape it again, so the
+    # URL handed to SQLAlchemy is byte-for-byte the original DATABASE_URL.
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
