@@ -250,6 +250,35 @@ any of these (e.g. to supply a real `AI_API_KEY`, or switch `AI_PROVIDER`
 to `openai`). Never commit `.env` - it's gitignored, and only placeholder
 values live in `.env.example`.
 
+### AWS / ECS frontend image
+
+The frontend `Dockerfile` has two nginx targets built from the same Angular
+build:
+
+| Target | nginx config | Behavior |
+|---|---|---|
+| `local` (default) | `nginx.conf.template` | Serves the SPA **and** proxies `/investigations`, `/events`, `/health`, `/ready` to `backend:8000`. Used by `docker compose`. |
+| `aws` | `nginx.aws.conf` | Serves **only** the SPA (with `try_files $uri $uri/ /index.html` fallback). No proxying and no backend address. |
+
+```bash
+cd frontend
+docker build --target aws -t nextrace-frontend:aws .
+docker run --rm -p 8081:80 nextrace-frontend:aws   # http://localhost:8081
+```
+
+On AWS the Application Load Balancer, not nginx, routes API traffic. The
+frontend calls the API with relative paths, so no backend URL is baked into
+the image. Configure the ALB listener as follows:
+
+- Forward `/investigations*`, `/events*`, `/health`, `/ready` and
+  `/webhooks/github` to the **backend** target group.
+- Make the **frontend** target group the default action for everything else.
+- Health-check the frontend target group on `/`. In the `aws` image,
+  `/health` is not proxied and returns the SPA's `index.html`.
+
+Any API path missing from the listener rules reaches the frontend and gets
+`index.html` back instead of JSON.
+
 ### Seeding the demo incident
 
 ```bash
