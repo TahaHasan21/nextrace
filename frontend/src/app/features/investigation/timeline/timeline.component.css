@@ -70,7 +70,8 @@
 .timeline-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-bottom: 4px;
 }
 
@@ -170,6 +171,12 @@
 
   .timeline-time {
     font-size: 11px;
+  }
+
+  /* The desktop highlight bleeds into the gutter; there is none here. */
+  .timeline-row--target .timeline-content {
+    margin: -8px 0;
+    min-width: 0;
   }
 
   .metadata-row {

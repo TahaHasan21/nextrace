@@ -51,7 +51,7 @@
       @if (investigation(); as inv) {
         <section class="panel incident-summary">
           <div class="incident-eyebrow-row">
-            <span class="incident-eyebrow">Production Investigation</span>
+            <span class="incident-eyebrow">Investigation &middot; {{ inv.target_event.environment }}</span>
             <span class="badge badge--target">Investigation Target</span>
           </div>
           <span class="incident-event-id">Event #{{ inv.target_event.id }}</span>
@@ -64,7 +64,7 @@
             </div>
             <div>
               <dt>Timestamp</dt>
-              <dd>{{ inv.target_event.timestamp | date: "MMMM d, y HH:mm" : 'UTC' }} UTC</dd>
+              <dd>{{ inv.target_event.timestamp | date: "MMMM d, y HH:mm:ss" : 'UTC' }} UTC</dd>
             </div>
             <div>
               <dt>Severity</dt>

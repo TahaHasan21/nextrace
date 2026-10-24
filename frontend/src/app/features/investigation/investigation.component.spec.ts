@@ -253,13 +253,29 @@ describe('InvestigationComponent', () => {
     expect(fixture.nativeElement.querySelector('app-ai-analysis')).not.toBeNull();
   });
 
+  it('labels the investigation with the target event environment, never a fixed one', () => {
+    fakeService.queueResult(() =>
+      of({
+        ...sampleInvestigation,
+        target_event: { ...sampleInvestigation.target_event, environment: 'local-demo' },
+      }),
+    );
+
+    setEventIdAndInvestigate('5');
+
+    const eyebrow = fixture.nativeElement.querySelector('.incident-eyebrow');
+    expect(eyebrow.textContent).toContain('local-demo');
+    expect(eyebrow.textContent.toLowerCase()).not.toContain('production');
+  });
+
   it('renders the incident header using the actual API data, not hardcoded values', () => {
     fakeService.queueResult(() => of(sampleInvestigation));
 
     setEventIdAndInvestigate('5');
 
     const summary = fixture.nativeElement.querySelector('.incident-summary');
-    expect(summary.textContent).toContain('Production Investigation');
+    expect(summary.querySelector('.incident-eyebrow').textContent).toContain('production');
+    expect(summary.textContent).toContain('10:04:00 UTC');
     expect(summary.textContent).toContain('Incident');
     expect(summary.textContent).toContain('payment-service');
     expect(summary.textContent).toContain('production');
