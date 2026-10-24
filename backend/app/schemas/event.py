@@ -1,7 +1,18 @@
+import json
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.services.provenance import DEMO_SCENARIO_METADATA_KEY
+
+# Field-level limits for POST /events. The whole request body is separately
+# capped (with HTTP 413) by app/core/body_limit.py - these only bound the
+# individual fields of an otherwise acceptable body (HTTP 422).
+MAX_EVENT_MESSAGE_LENGTH = 4000
+# Measured on the compact JSON serialization, so deeply nested or
+# many-keyed metadata is bounded by its real size, not its key count.
+MAX_EVENT_METADATA_BYTES = 16 * 1024
 
 
 class EventCreate(BaseModel):
@@ -16,7 +27,7 @@ class EventCreate(BaseModel):
     # Deduplication identity is (source, source_event_id), never this
     # field alone.
     source_event_id: str | None = Field(default=None, max_length=255)
-    message: str
+    message: str = Field(max_length=MAX_EVENT_MESSAGE_LENGTH)
     metadata: dict[str, Any] | None = None
 
     @field_validator("timestamp")
@@ -24,6 +35,25 @@ class EventCreate(BaseModel):
     def timestamp_must_be_timezone_aware(cls, value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ValueError("timestamp must be timezone-aware")
+        return value
+
+    @field_validator("metadata")
+    @classmethod
+    def metadata_must_fit_size_limit(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return value
+        if DEMO_SCENARIO_METADATA_KEY in value:
+            # Server-controlled provenance marker (see app/services/provenance.py):
+            # only server-side code such as the demo seeder may set it, so an
+            # API caller can neither inject events into a demo scenario nor
+            # hide genuine events from genuine investigations. Rejected
+            # whatever its value or type.
+            raise ValueError(
+                f"metadata.{DEMO_SCENARIO_METADATA_KEY} is reserved and cannot be set via the API"
+            )
+        size = len(json.dumps(value, separators=(",", ":"), default=str).encode("utf-8"))
+        if size > MAX_EVENT_METADATA_BYTES:
+            raise ValueError(f"metadata must be at most {MAX_EVENT_METADATA_BYTES} bytes as JSON")
         return value
 
 

@@ -244,6 +244,7 @@ development defaults for every one of them via `${VAR:-default}`, so no
 | `AI_PROVIDER` | `anthropic` | AI provider selector - `anthropic`, `openai`, or `gemini` |
 | `AI_API_KEY` | *(empty)* | API key for the selected provider - leave blank to run with AI analysis disabled |
 | `AI_MODEL` | `claude-opus-5` | Model for the selected provider (e.g. `claude-opus-5` for Anthropic, `gpt-6-astra` for OpenAI, `gemini-3.8-flash` for Gemini) |
+| `NEXTRACE_INGEST_KEY` | *(empty)* | Required `X-NexTrace-Ingest-Key` value for `POST /events` and AI analysis - leave blank and those two endpoints return 503 |
 
 Copy `.env.example` to `.env` at the repo root only if you want to override
 any of these (e.g. to supply a real `AI_API_KEY`, or switch `AI_PROVIDER`
@@ -357,10 +358,18 @@ and loading/error/empty states throughout.
 
 ## 11. API examples
 
+Writes that could forge evidence or spend AI quota - `POST /events` and
+`POST /investigations/{id}/analysis` - require the `X-NexTrace-Ingest-Key`
+header, matching the server's `NEXTRACE_INGEST_KEY` (401 if missing or
+wrong, 503 if the server has no key configured). Read endpoints stay public.
+`POST /events` bodies are capped at 64 KiB (413), messages at 4,000
+characters and metadata at 16 KiB of JSON (422).
+
 ```bash
 # Ingest an event
 curl -X POST http://localhost:8000/events \
   -H "Content-Type: application/json" \
+  -H "X-NexTrace-Ingest-Key: $NEXTRACE_INGEST_KEY" \
   -d '{
     "service": "payment-service",
     "environment": "production",
@@ -372,14 +381,17 @@ curl -X POST http://localhost:8000/events \
     "metadata": {"version": "1.4.3"}
   }'
 
-# List recent events
+# List recent events (optional exact-match filters: service, environment,
+# source; exclude_demo=true omits seeded demo events)
 curl http://localhost:8000/events
+curl "http://localhost:8000/events?source=nextrace-runtime&exclude_demo=true"
 
 # Get a deterministic investigation (timeline + evidence + ranked candidates)
 curl http://localhost:8000/investigations/25
 
 # Ask the (optional) AI layer to explain the investigation
-curl -X POST http://localhost:8000/investigations/25/analysis
+curl -X POST http://localhost:8000/investigations/25/analysis \
+  -H "X-NexTrace-Ingest-Key: $NEXTRACE_INGEST_KEY"
 
 # Liveness - no database or AI dependency
 curl http://localhost:8000/health
@@ -390,6 +402,41 @@ curl http://localhost:8000/ready
 
 Full interactive API docs are available at `http://localhost:8000/docs`
 (FastAPI's generated Swagger UI) whenever the backend is running.
+
+The web UI never contains the ingest key: "Analyze with AI" first runs
+without one, and on a 401 asks the operator for it. The key is kept in
+page memory only (never stored) and is gone on reload.
+
+### Runtime telemetry (genuine events from NexTrace itself)
+
+When `NEXTRACE_RUNTIME_TELEMETRY_ENABLED=true` (with
+`NEXTRACE_RUNTIME_SERVICE` and `NEXTRACE_RUNTIME_ENVIRONMENT` set), the
+backend records its own operational events with `source=nextrace-runtime`:
+
+| Event | When | `source_event_id` (deduplication) |
+|---|---|---|
+| `deployment` | Once per ECS task, at application start | `task/<task-id>:startup` |
+| `error_spike` | ≥ `NEXTRACE_ERROR_SPIKE_THRESHOLD` (5) unhandled 500s / AI-provider failures within `NEXTRACE_ERROR_SPIKE_WINDOW_SECONDS` (60) | `task/<task-id>:error_spike:<window start>` - at most one per task per window |
+
+The task ID comes from the ECS task metadata endpoint; without it (e.g.
+local Docker) no runtime events are recorded rather than inventing an ID.
+Events carry counts and task/image identity only - never exception
+messages, request data, or credentials. Telemetry never blocks startup or
+changes an API response, and a failed telemetry write is never counted as
+an application failure. A deployment followed by an error spike becomes a
+ranked, evidence-backed *candidate* - not a proven cause.
+
+Seeded demo events (a non-empty string `metadata.demo_scenario`) only ever
+correlate with their own scenario, so genuine investigations never pick
+them up. The marker is server-controlled: `POST /events` rejects any
+payload carrying `metadata.demo_scenario` with 422.
+
+AI analysis receives only allowlisted, scalar event metadata
+(`AI_METADATA_ALLOWLIST` in `backend/app/services/ai/context.py`), and the
+saved analysis snapshot is that same filtered context. Event `message` text
+is **not** filtered - it is sent to the AI provider and stored in the
+snapshot - so never put credentials or personal data in event messages.
+NexTrace does not log event messages.
 
 ## 12. Future roadmap
 

@@ -4,11 +4,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
+from app.services.provenance import (
+    demo_scenario_of,
+    is_not_demo_event_clause,
+    same_demo_scenario_clause,
+)
 
 # V1 correlation is deliberately deterministic: same service, same
 # environment, and temporal proximity. Source and event_type are excluded on
 # purpose, since a real incident often spans multiple sources/event types
 # (e.g. a GitHub deployment, a Kubernetes event, and an application error).
+#
+# Provenance isolation: seeded demo events only ever correlate with events
+# from the same demo scenario, and genuine events never correlate with demo
+# events - so a real investigation can never pick up seeded evidence (and
+# the demo incident stays exactly as seeded), even if service/environment
+# names happen to collide.
 DEFAULT_CORRELATION_WINDOW = timedelta(minutes=5)
 
 
@@ -36,7 +47,13 @@ def find_correlated_events(
         .where(Event.timestamp >= window_start)
         .where(Event.timestamp <= window_end)
         .where(Event.id != target.id)
-        .order_by(Event.timestamp.asc())
     )
 
+    scenario = demo_scenario_of(target)
+    if scenario is None:
+        statement = statement.where(is_not_demo_event_clause())
+    else:
+        statement = statement.where(same_demo_scenario_clause(scenario))
+
+    statement = statement.order_by(Event.timestamp.asc())
     return list(db.scalars(statement).all())

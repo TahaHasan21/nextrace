@@ -248,3 +248,29 @@
   display: grid;
   gap: 3px;
 }
+
+.key-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.key-label {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.key-input {
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  min-width: 0;
+  padding: 7px 10px;
+}
+
+.key-input:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}

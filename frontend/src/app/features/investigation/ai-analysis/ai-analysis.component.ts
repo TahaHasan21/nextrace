@@ -43,6 +43,15 @@ export class AiAnalysisComponent implements OnInit, OnChanges {
   protected readonly analysis = signal<InvestigationAnalysis | null>(null);
   protected readonly errorMessage = signal('');
 
+  /** True after the backend rejected an analysis request for a missing or
+   * invalid operator key (HTTP 401) - the error state then offers a key
+   * field instead of a plain retry. */
+  protected readonly needsKey = signal(false);
+
+  /** Operator-entered key, held in memory only: never persisted to
+   * storage, never rendered, gone on reload. */
+  private ingestKey = '';
+
   // "Previous analyses" - a lightweight, read-only history list. Loading it
   // is safe to do automatically (it never triggers a real AI provider
   // call, unlike analyze() below), unlike the live "Analyze with AI" flow.
@@ -64,6 +73,7 @@ export class AiAnalysisComponent implements OnInit, OnChanges {
     if (changes['eventId'] && !changes['eventId'].firstChange) {
       this.analysis.set(null);
       this.errorMessage.set('');
+      this.needsKey.set(false);
       this.setState('idle');
 
       this.selectedRunId.set(null);
@@ -80,26 +90,50 @@ export class AiAnalysisComponent implements OnInit, OnChanges {
   analyze(): void {
     this.setState('loading');
     this.errorMessage.set('');
+    this.needsKey.set(false);
 
-    this.investigationService.analyzeInvestigation(this.eventId).subscribe({
-      next: (result) => {
-        this.analysis.set(result);
-        this.setState('success');
-        this.loadHistory(); // the run that just completed is now part of history
-      },
-      error: (err: HttpErrorResponse) => {
-        if (err.status === 503) {
-          this.errorMessage.set(
-            (err.error && err.error.detail) || 'AI analysis is not available right now.',
-          );
-          this.setState('unavailable');
-        } else {
-          this.errorMessage.set('Could not generate an AI analysis. Please try again.');
-          this.setState('error');
-        }
-        this.loadHistory(); // a failed run is also recorded in history
-      },
-    });
+    this.investigationService
+      .analyzeInvestigation(this.eventId, this.ingestKey || undefined)
+      .subscribe({
+        next: (result) => {
+          this.analysis.set(result);
+          this.setState('success');
+          this.loadHistory(); // the run that just completed is now part of history
+        },
+        error: (err: HttpErrorResponse) => {
+          if (err.status === 401) {
+            const rejectedKey = this.ingestKey !== '';
+            this.ingestKey = '';
+            this.needsKey.set(true);
+            this.errorMessage.set(
+              rejectedKey
+                ? 'The operator key was not accepted.'
+                : 'AI analysis requires an operator key.',
+            );
+            this.setState('error');
+            return; // rejected before any analysis run was recorded
+          }
+          if (err.status === 503) {
+            this.errorMessage.set(
+              (err.error && err.error.detail) || 'AI analysis is not available right now.',
+            );
+            this.setState('unavailable');
+          } else {
+            this.errorMessage.set('Could not generate an AI analysis. Please try again.');
+            this.setState('error');
+          }
+          this.loadHistory(); // a failed run is also recorded in history
+        },
+      });
+  }
+
+  protected analyzeWithKey(key: string): void {
+    const trimmed = key.trim();
+    if (!trimmed) {
+      return;
+    }
+    this.ingestKey = trimmed;
+    this.analyze();
   }
 
   /** Selecting an already-selected run collapses it again - a compact

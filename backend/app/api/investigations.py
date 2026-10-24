@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.ingest_auth import INGEST_KEY_HEADER, require_ingest_key
 from app.core.logging import get_logger
+from app.core.runtime_events import FAILURE_AI_PROVIDER, record_application_failure
 from app.db.session import get_db
 from app.models.analysis_run import AnalysisRun
 from app.models.event import Event
@@ -54,6 +56,11 @@ def get_investigation(event_id: int, db: Session = Depends(get_db)) -> Investiga
 @router.post(
     "/{event_id}/analysis",
     response_model=InvestigationAnalysis,
+    # Route-level dependencies are resolved before the endpoint's own
+    # parameters, so an unauthorized call is rejected before the AI
+    # provider is even constructed - never mind called - and before any
+    # AnalysisRun row is written.
+    dependencies=[Depends(require_ingest_key)],
     summary="Generate a grounded AI analysis of an investigation",
     response_description="A structured, evidence-grounded explanation of the investigation.",
     description=(
@@ -65,7 +72,10 @@ def get_investigation(event_id: int, db: Session = Depends(get_db)) -> Investiga
         "validated against the actual candidate list before being returned. "
         "AI analysis is optional: this endpoint returns 503 if AI_API_KEY (or the "
         "configured provider's own credential env var, e.g. ANTHROPIC_API_KEY / "
-        "OPENAI_API_KEY) is not configured, or if the provider is unavailable."
+        "OPENAI_API_KEY) is not configured, or if the provider is unavailable. "
+        f"Requires the `{INGEST_KEY_HEADER}` header, since every call spends AI "
+        "provider quota (401 if missing or invalid, 503 if the server has no ingest "
+        "key configured)."
     ),
 )
 def get_investigation_analysis(
@@ -111,6 +121,10 @@ def get_investigation_analysis(
                 "duration_ms": duration_ms,
             },
         )
+        # Counted here - after a real provider attempt - rather than in the
+        # app-level AIProviderError handler, which also sees configuration
+        # errors (e.g. no AI key configured) that are not runtime failures.
+        record_application_failure(FAILURE_AI_PROVIDER)
         # Re-raised as-is; the app-level exception handler in main.py turns
         # this into a controlled 503 response.
         raise

@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 
 import { AnalysisRunDetail, AnalysisRunSummary, Investigation } from '../../models/investigation.models';
-import { InvestigationService } from './investigation.service';
+import { INGEST_KEY_HEADER, InvestigationService } from './investigation.service';
 
 describe('InvestigationService', () => {
   let service: InvestigationService;
@@ -65,6 +65,23 @@ describe('InvestigationService', () => {
 
     expect(nextCalled).toBe(false);
     expect(capturedStatus).toBe(404);
+  });
+
+  it('posts an analysis request without a key header by default', () => {
+    service.analyzeInvestigation(5).subscribe();
+
+    const req = httpMock.expectOne('/investigations/5/analysis');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.has(INGEST_KEY_HEADER)).toBe(false);
+    req.flush({});
+  });
+
+  it('sends the operator key header when one is supplied', () => {
+    service.analyzeInvestigation(5, 'operator-key-123').subscribe();
+
+    const req = httpMock.expectOne('/investigations/5/analysis');
+    expect(req.request.headers.get(INGEST_KEY_HEADER)).toBe('operator-key-123');
+    req.flush({});
   });
 
   it('requests the analysis run history for the given event id', () => {

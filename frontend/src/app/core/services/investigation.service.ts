@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -15,6 +15,12 @@ import {
  * (proxy.conf.json) for local development, or the production host serving
  * both the API and this app together.
  */
+
+/** Header the backend requires on POST /investigations/{id}/analysis, since
+ * each call spends AI-provider quota. The key is never bundled into this
+ * app: an operator enters it at runtime (see AiAnalysisComponent). */
+export const INGEST_KEY_HEADER = 'X-NexTrace-Ingest-Key';
+
 @Injectable({ providedIn: 'root' })
 export class InvestigationService {
   private readonly http = inject(HttpClient);
@@ -25,8 +31,13 @@ export class InvestigationService {
 
   /** Triggered only on explicit user action ("Analyze with AI") - never
    * called automatically when an investigation loads. */
-  analyzeInvestigation(eventId: number): Observable<InvestigationAnalysis> {
-    return this.http.post<InvestigationAnalysis>(`/investigations/${eventId}/analysis`, {});
+  analyzeInvestigation(eventId: number, ingestKey?: string): Observable<InvestigationAnalysis> {
+    const headers = ingestKey ? new HttpHeaders({ [INGEST_KEY_HEADER]: ingestKey }) : undefined;
+    return this.http.post<InvestigationAnalysis>(
+      `/investigations/${eventId}/analysis`,
+      {},
+      { headers },
+    );
   }
 
   /** Lightweight history list (no context snapshot) - safe to call

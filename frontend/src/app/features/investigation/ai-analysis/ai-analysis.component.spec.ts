@@ -15,11 +15,13 @@ class FakeInvestigationService {
   private nextHistoryCall: (() => Observable<AnalysisRunSummary[]>) | null = null;
   private nextDetailCall: (() => Observable<AnalysisRunDetail>) | null = null;
   public calls: number[] = [];
+  public keys: Array<string | undefined> = [];
   public historyCalls: number[] = [];
   public detailCalls: Array<[number, number]> = [];
 
-  analyzeInvestigation(eventId: number): Observable<InvestigationAnalysis> {
+  analyzeInvestigation(eventId: number, ingestKey?: string): Observable<InvestigationAnalysis> {
     this.calls.push(eventId);
+    this.keys.push(ingestKey);
     if (this.nextCall) {
       return this.nextCall();
     }
@@ -281,6 +283,90 @@ describe('AiAnalysisComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Could not generate an AI analysis');
     expect(fixture.nativeElement.querySelector('.analyze-button')).not.toBeNull();
+  });
+
+  describe('operator key (HTTP 401)', () => {
+    const unauthorized = () =>
+      throwError(() => new HttpErrorResponse({ status: 401, statusText: 'Unauthorized' }));
+
+    function submitKey(value: string): void {
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.key-input');
+      input.value = value;
+      const form: HTMLFormElement = fixture.nativeElement.querySelector('.key-form');
+      form.dispatchEvent(new Event('submit'));
+      fixture.detectChanges();
+    }
+
+    it('sends no key until one is entered', () => {
+      fakeService.queueResult(() => of(sampleAnalysis));
+      fixture.detectChanges();
+
+      clickAnalyze();
+
+      expect(fakeService.keys).toEqual([undefined]);
+    });
+
+    it('asks for an operator key instead of offering a plain retry', () => {
+      fakeService.queueResult(unauthorized);
+      fixture.detectChanges();
+
+      clickAnalyze();
+
+      expect(fixture.nativeElement.textContent).toContain('AI analysis requires an operator key.');
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.key-input');
+      expect(input).not.toBeNull();
+      expect(input.type).toBe('password');
+      expect(fixture.nativeElement.textContent).not.toContain('Try again');
+    });
+
+    it('retries with the entered key and renders the analysis', () => {
+      fakeService.queueResult(unauthorized);
+      fixture.detectChanges();
+      clickAnalyze();
+
+      fakeService.queueResult(() => of(sampleAnalysis));
+      submitKey('  operator-key-123  ');
+
+      expect(fakeService.keys).toEqual([undefined, 'operator-key-123']);
+      expect(fixture.nativeElement.textContent).toContain(sampleAnalysis.summary);
+    });
+
+    it('reports a rejected key and forgets it', () => {
+      fakeService.queueResult(unauthorized);
+      fixture.detectChanges();
+      clickAnalyze();
+      submitKey('wrong-key');
+
+      expect(fixture.nativeElement.textContent).toContain('The operator key was not accepted.');
+      expect(fixture.nativeElement.querySelector('.key-input')).not.toBeNull();
+    });
+
+    it('ignores an empty key submission', () => {
+      fakeService.queueResult(unauthorized);
+      fixture.detectChanges();
+      clickAnalyze();
+
+      submitKey('   ');
+
+      expect(fakeService.calls.length).toBe(1);
+    });
+
+    it('never renders or stores the key', () => {
+      const local = { ...localStorage };
+      const session = { ...sessionStorage };
+      fakeService.queueResult(unauthorized);
+      fixture.detectChanges();
+      clickAnalyze();
+
+      fakeService.queueResult(unauthorized);
+      submitKey('secret-operator-key');
+
+      expect(fixture.nativeElement.innerHTML).not.toContain('secret-operator-key');
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.key-input');
+      expect(input.value).toBe('');
+      expect({ ...localStorage }).toEqual(local);
+      expect({ ...sessionStorage }).toEqual(session);
+    });
   });
 
   it('resets to idle when the event id changes', () => {

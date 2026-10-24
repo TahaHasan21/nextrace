@@ -19,7 +19,25 @@
 
   @if (state() === 'error') {
     <p class="ai-state ai-state--error">{{ errorMessage() }}</p>
-    <button type="button" class="analyze-button" (click)="analyze()">Try again</button>
+    @if (needsKey()) {
+      <form
+        class="key-form"
+        (submit)="$event.preventDefault(); analyzeWithKey(keyInput.value); keyInput.value = ''"
+      >
+        <label class="key-label" for="ingest-key">Operator key</label>
+        <input
+          #keyInput
+          id="ingest-key"
+          class="key-input"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button type="submit" class="analyze-button">Analyze with key</button>
+      </form>
+    } @else {
+      <button type="button" class="analyze-button" (click)="analyze()">Try again</button>
+    }
   }
 
   @if (state() === 'success' && analysis(); as result) {

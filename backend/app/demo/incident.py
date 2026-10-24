@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models.event import Event
 from app.normalization.models import CanonicalEvent
 from app.services.ingestion import ingest_event
+from app.services.provenance import DEMO_SCENARIO_METADATA_KEY
 
 SERVICE = "payment-service"
 ENVIRONMENT = "production"
@@ -28,7 +29,9 @@ ENVIRONMENT = "production"
 # detect an already-persisted copy without inventing a raw_events table or
 # touching the generic persist_event()/Event model.
 DEMO_SCENARIO_ID = "payment-incident-v1"
-DEMO_SCENARIO_METADATA_KEY = "demo_scenario"
+# DEMO_SCENARIO_METADATA_KEY is defined once in app/services/provenance.py
+# (imported above, and still importable from this module) so demo seeding,
+# GET /events filtering, and correlation isolation share one marker.
 
 # A stable (across processes/runs - unlike Python's randomized hash())
 # 64-bit key for a PostgreSQL advisory lock, derived from DEMO_SCENARIO_ID.

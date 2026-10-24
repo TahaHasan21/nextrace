@@ -42,6 +42,11 @@ services:
       # /webhooks/github returns a controlled 503 until it's configured -
       # it never falls back to accepting unsigned deliveries.
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # Required by POST /events and POST /investigations/{id}/analysis
+      # (X-NexTrace-Ingest-Key header). Empty still starts the backend;
+      # those endpoints then return a controlled 503 rather than accepting
+      # unauthenticated writes. Runtime telemetry stays off locally.
+      NEXTRACE_INGEST_KEY: ${NEXTRACE_INGEST_KEY:-}
     ports:
       - "8080:8000"
 

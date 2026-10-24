@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -6,20 +9,46 @@ from sqlalchemy.orm import Session
 from app.api.events import router as events_router
 from app.api.investigations import router as investigations_router
 from app.api.webhooks.github import router as github_webhook_router
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestIdMiddleware
+from app.core.runtime_events import (
+    FAILURE_UNHANDLED_EXCEPTION,
+    record_application_failure,
+    start_runtime_telemetry,
+    stop_runtime_telemetry,
+)
 from app.db.session import get_db
 from app.services.ai.provider import AIProviderError
 
 configure_logging()
 logger = get_logger("app")
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # start_runtime_telemetry() never raises and does its identity lookup
+    # and database write on a background thread, so startup never waits
+    # on (or fails because of) telemetry. It is a no-op unless explicitly
+    # enabled - see app/core/runtime_events.py.
+    start_runtime_telemetry()
+    try:
+        yield
+    finally:
+        stop_runtime_telemetry()
+
+
 app = FastAPI(
     title="Nextrace",
     description="Production incident intelligence platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
+# Registration order: the last middleware added is the outermost, so
+# RequestIdMiddleware wraps BodySizeLimitMiddleware and even a 413 carries
+# a request ID and a request_completed log line.
+app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
 app.include_router(events_router)
@@ -46,6 +75,7 @@ def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         "unexpected server error",
         extra={"event": "unexpected_error", "method": request.method, "path": request.url.path},
     )
+    record_application_failure(FAILURE_UNHANDLED_EXCEPTION)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 

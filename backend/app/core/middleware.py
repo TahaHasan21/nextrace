@@ -8,6 +8,7 @@ from starlette.types import ASGIApp
 
 from app.core.logging import get_logger
 from app.core.request_context import set_request_id
+from app.core.runtime_events import FAILURE_UNHANDLED_EXCEPTION, record_application_failure
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -56,6 +57,10 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
                     "duration_ms": duration_ms,
                 },
             )
+            # Mutually exclusive with main.handle_unexpected_error: an
+            # exception caught here never also reaches that handler, so
+            # each unhandled failure is counted exactly once.
+            record_application_failure(FAILURE_UNHANDLED_EXCEPTION)
             response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
             response.headers[REQUEST_ID_HEADER] = request_id
             return response

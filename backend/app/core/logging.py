@@ -31,6 +31,11 @@ _STRUCTURED_FIELDS = (
     "delivery_id",
     "github_event_type",
     "environment",
+    # Rejection/skip reason codes (e.g. "missing", "task_identity_unavailable")
+    "reason",
+    # Exception *class name* only - never the exception message
+    "error_type",
+    "source_event_id",
 )
 
 
