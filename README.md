@@ -28,8 +28,8 @@ it.
 ## 3. Architecture
 
 ```text
-Event Sources
-    ↓
+Event Sources        (POST /events with X-NexTrace-Ingest-Key, signed GitHub
+    ↓                 webhooks, NexTrace's own runtime telemetry)
 Normalization        (github / application adapters -> CanonicalEvent)
     ↓
 Persistence           (PostgreSQL)
@@ -50,8 +50,18 @@ Angular (frontend)
     ↓
 FastAPI (backend)
     ↓
-PostgreSQL   +   AI Provider (Anthropic, optional)
+PostgreSQL   +   AI Provider (Anthropic / OpenAI / Gemini, optional)
 ```
+
+Data flow for one investigation: `GET /investigations/{event_id}` loads the
+target event, selects events with the same service and environment within
+±5 minutes (never mixing seeded demo data with genuine events), orders
+them, derives evidence between recognized event-type pairs, and scores
+every earlier event as a candidate. Nothing is cached or persisted - the
+same events always produce the same response. Only an explicit
+`POST /investigations/{event_id}/analysis` sends that result (with
+allowlisted metadata) to the AI provider, and each attempt is stored as an
+analysis run.
 
 ## 4. Core engineering ideas
 
@@ -192,7 +202,7 @@ solve.
 ### Prerequisites
 
 - Docker (for PostgreSQL, or for the full Docker Compose stack)
-- Python 3.13+
+- Python 3.11+ (the backend image uses 3.13; the test suite is verified on 3.11)
 - Node.js 22+ / npm 10+
 
 ### Local development (backend + frontend run directly)
@@ -216,8 +226,9 @@ npm install --legacy-peer-deps
 npm start                    # ng serve, proxies API calls to localhost:8000
 ```
 
-Open `http://localhost:4200`. `GET http://localhost:8000/health` should
-return `{"status": "healthy"}`.
+Open `http://localhost:4200`, pick an event from **Recent events** (or
+enter its ID), or link straight to one with `http://localhost:4200/?event=<id>`.
+`GET http://localhost:8000/health` should return `{"status": "healthy"}`.
 
 ### Docker Compose (full stack)
 
@@ -280,15 +291,40 @@ the image. Configure the ALB listener as follows:
 Any API path missing from the listener rules reaches the frontend and gets
 `index.html` back instead of JSON.
 
-### Local end-to-end validation (genuine runtime events)
+### Local end-to-end validation and incident demo
 
-[`docs/local-validation.md`](docs/local-validation.md) walks through a
-repeatable demonstration on events produced by the running backend itself -
-no seeded data: a throwaway PostgreSQL with the real migrations, local
-runtime telemetry, a controlled local-only provider fault that produces a
-genuine `error_spike`, the resulting investigation, and (optionally, with an
-approved provider) the AI explanation. It needs no credentials or paid API
-calls except for that optional step.
+[`docs/local-validation.md`](docs/local-validation.md) is the reproducible,
+credential-free walkthrough from a clean checkout: a throwaway PostgreSQL
+with the real migrations, local runtime telemetry, a controlled local-only
+provider fault that produces a genuine `error_spike`, three incident
+scenarios ingested through the real API
+(`backend/scripts/ingest_scenario.py`), a genuine unhandled-exception
+spike, and the investigation UI. Only the clearly marked optional AI step
+needs credentials or makes a paid call.
+
+[`docs/demo-script.md`](docs/demo-script.md) is a short technical
+walkthrough built on it.
+
+### Incident scenarios that have been validated
+
+Each was run end to end against a live backend and an isolated database
+(see the validation guide), and is pinned by automated tests in
+`backend/tests/test_incident_scenarios.py` and
+`test_ingest_scenario_script.py`, with expected values worked out by hand
+from the documented rules:
+
+| Scenario                                         | What the investigation shows                                                                                                                                                                  |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment regression → rollback → recovery      | deployment ranked first (100), an unrelated autoscale second (20), recovery evidence linking the spike, rollback and recovery; other services, environments and out-of-window events excluded |
+| Database latency → request timeouts              | db_latency as the only candidate (80); no recovery or causal claim                                                                                                                            |
+| Configuration regression → revert → recovery     | config_change first (100); setting values and people never reach the AI context                                                                                                               |
+| Genuine unhandled exceptions (runtime telemetry) | five real 500s → one `error_spike` (`unhandled_exception_count: 5`) with the runtime deployment as a candidate; clients only see a generic error                                              |
+| Investigating the recovery itself                | rollback (65) above the error spike (45); the deployment is outside the window                                                                                                                |
+| AI-provider failures (runtime telemetry)         | five failed analyses → one `error_spike`; each run stored as failed with a safe message                                                                                                       |
+
+Also verified: deduplication of redelivered events, byte-identical repeat
+reads, and that a genuine incident colliding with the seeded demo (same
+service, environment and minutes) never includes demo events.
 
 ### Seeding the demo incident
 
@@ -334,7 +370,7 @@ identification rule.
 
 ```bash
 cd backend
-pytest              # 298 tests
+pytest              # 589 tests
 alembic check        # verifies no pending schema drift
 ```
 
@@ -348,7 +384,9 @@ that no API key ever appears in a log line or exception message), AI
 grounding and safety (candidate-reference validation, evidence-reference
 validation, prompt/data-boundary and prompt-injection resistance - all via fake
 providers, no live API key required), structured logging/request-ID/
-readiness behavior, and demo idempotency/cleanup/concurrency-safety logic.
+readiness behavior, demo idempotency/cleanup/concurrency-safety logic,
+ingest authentication and request limits, runtime telemetry, and the
+realistic incident scenarios above through the real API.
 Tests run against an isolated `nextrace_test` database - the real
 development database is never touched by the suite.
 
@@ -356,7 +394,7 @@ development database is never touched by the suite.
 
 ```bash
 cd frontend
-npm test -- --watch=false   # 43 tests
+npm test -- --watch=false   # 102 tests
 npm run build                 # production build
 ```
 
@@ -364,7 +402,9 @@ Coverage includes the investigation console, timeline/evidence/candidate
 rendering, metadata display, the AI analysis panel (loading/success/error/
 unavailable states, primary/alternative candidate evidence citations linked
 to the evidence panel, using a fake service - no live API key required),
-and loading/error/empty states throughout.
+finding investigations (recent events, the demo filter, `?event=` links,
+pivoting from the timeline), candidate-to-event links, and
+loading/error/empty states throughout.
 
 ## 11. API examples
 
@@ -456,7 +496,46 @@ is **not** filtered - it is sent to the AI provider and stored in the
 snapshot - so never put credentials or personal data in event messages.
 NexTrace does not log event messages.
 
-## 12. Future roadmap
+## 12. Known limitations
+
+- **Fixed rules, fixed window.** Correlation is same service + environment
+  within ±5 minutes; evidence covers a fixed list of event-type pairs.
+  Events from a different service (for example a shared database) or just
+  outside the window are not considered, and an unrecognized event type
+  only earns temporal-proximity points.
+- **Recovery needs an explicit `rollback` event.** A corrective
+  roll-forward deployment or a second configuration change appears in the
+  timeline but produces no recovery evidence. Recovery context points go
+  to every preceding deployment and configuration change in an
+  investigation that contains recovery evidence.
+- **Evidence is derived, not stored**; scores are heuristics and can tie.
+- **Runtime spikes:** at most one `error_spike` per 60-second bucket per
+  process, and its counts are not updated if failures continue in that
+  bucket. Counters are per process (not shared across tasks) and reset on
+  restart.
+- **AI grounding is structural.** Invented candidate or evidence IDs are
+  removed, but the prose itself is not verified. Event messages are sent to
+  the provider unfiltered.
+- **Reads are unauthenticated.** See below.
+
+## 13. What needs credentials
+
+| Feature                                                                            | Needs                                                           |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Investigations, timeline, evidence, candidates, UI, demo seeding, validation guide | Nothing but PostgreSQL                                          |
+| `POST /events`, AI analysis endpoint                                               | `NEXTRACE_INGEST_KEY` (any value you generate)                  |
+| AI explanations                                                                    | An approved provider key (`AI_API_KEY`); every call is billable |
+| GitHub webhooks                                                                    | `GITHUB_WEBHOOK_SECRET` shared with the GitHub repository       |
+| Runtime telemetry on ECS                                                           | The ECS task metadata endpoint (automatic on ECS)               |
+
+## 14. Production readiness
+
+Nothing in this repository is ready to receive real operational data on a
+public endpoint yet. [`docs/production-readiness.md`](docs/production-readiness.md)
+separates the blockers (HTTPS, authenticated reads, key separation and
+rotation, AI data-handling approval) from optional improvements.
+
+## 15. Future roadmap
 
 Realistic next steps, not a wishlist:
 
