@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.demo.incident import generate_payment_incident
 from app.models.event import Event
 from app.services.candidates import CandidateResult, generate_candidates
@@ -911,3 +913,56 @@ def test_generate_candidates_deterministic_with_richer_evidence():
     second_run = generate_candidates(incident, timeline, evidence)
 
     assert first_run == second_run
+
+
+# --- Temporal reason wording (display only; scores use the exact gap) -------
+
+
+@pytest.mark.parametrize(
+    ("gap", "expected"),
+    [
+        (timedelta(milliseconds=500), "Occurred less than a second before the error_spike."),
+        (timedelta(seconds=1), "Occurred 1 second before the error_spike."),
+        (timedelta(seconds=2), "Occurred 2 seconds before the error_spike."),
+        (timedelta(seconds=21), "Occurred 21 seconds before the error_spike."),
+        (timedelta(seconds=59), "Occurred 59 seconds before the error_spike."),
+        (timedelta(seconds=59, milliseconds=999), "Occurred 59 seconds before the error_spike."),
+        (timedelta(seconds=60), "Occurred 1 minute before the error_spike."),
+        (timedelta(seconds=89), "Occurred 1 minute before the error_spike."),
+        (timedelta(minutes=2), "Occurred 2 minutes before the error_spike."),
+        (timedelta(minutes=4), "Occurred 4 minutes before the error_spike."),
+        (timedelta(minutes=10), "Occurred 10 minutes before the error_spike."),
+    ],
+)
+def test_temporal_reason_describes_short_gaps_accurately(gap, expected):
+    target = _event(2, event_type="error_spike", timestamp=BASE_TIME + gap)
+    deployment = _event(1, event_type="deployment", timestamp=BASE_TIME)
+
+    [candidate] = generate_candidates(target, [deployment, target], [])
+
+    assert candidate.reasons[0] == expected
+    assert candidate.reason_codes[0] == "temporal_proximity"
+
+
+@pytest.mark.parametrize(
+    ("gap", "expected_score"),
+    [
+        (timedelta(seconds=21), 30 + 25),
+        (timedelta(seconds=59), 30 + 25),
+        (timedelta(seconds=60), 30 + 25),
+        (timedelta(minutes=2), 30 + 25),
+        (timedelta(minutes=2, seconds=1), 20 + 25),
+        (timedelta(minutes=5), 20 + 25),
+        (timedelta(minutes=5, seconds=1), 10 + 25),
+        (timedelta(minutes=10), 10 + 25),
+        (timedelta(minutes=10, seconds=1), 25),
+    ],
+)
+def test_reason_wording_change_leaves_scores_at_bucket_boundaries_unchanged(gap, expected_score):
+    target = _event(2, event_type="error_spike", timestamp=BASE_TIME + gap)
+    deployment = _event(1, event_type="deployment", timestamp=BASE_TIME)
+
+    [candidate] = generate_candidates(target, [deployment, target], [])
+
+    assert candidate.score == expected_score
+    assert (candidate.reason_codes[0] == "temporal_proximity") == (gap <= timedelta(minutes=10))

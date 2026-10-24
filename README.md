@@ -280,6 +280,16 @@ the image. Configure the ALB listener as follows:
 Any API path missing from the listener rules reaches the frontend and gets
 `index.html` back instead of JSON.
 
+### Local end-to-end validation (genuine runtime events)
+
+[`docs/local-validation.md`](docs/local-validation.md) walks through a
+repeatable demonstration on events produced by the running backend itself -
+no seeded data: a throwaway PostgreSQL with the real migrations, local
+runtime telemetry, a controlled local-only provider fault that produces a
+genuine `error_spike`, the resulting investigation, and (optionally, with an
+approved provider) the AI explanation. It needs no credentials or paid API
+calls except for that optional step.
+
 ### Seeding the demo incident
 
 ```bash

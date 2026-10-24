@@ -72,13 +72,25 @@ def _is_eligible_candidate(event: Event, target: Event) -> bool:
     )
 
 
+def _describe_gap(gap: timedelta) -> str:
+    """Human-readable gap for candidate reasons. Display only - scoring
+    always uses the exact timedelta. Under a minute is stated in whole
+    seconds (a 21-second gap must not read as "1 minute"); a minute or more
+    keeps the existing nearest-minute wording."""
+    seconds = int(gap.total_seconds())
+    if seconds < 1:
+        return "less than a second"
+    if seconds < 60:
+        return f"{seconds} second" if seconds == 1 else f"{seconds} seconds"
+    minutes = round(gap.total_seconds() / 60)
+    return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+
+
 def _temporal_score_and_reason(event: Event, target: Event) -> tuple[int, str | None, str | None]:
     gap = target.timestamp - event.timestamp
     for bucket_limit, points in TEMPORAL_PROXIMITY_BUCKETS:
         if gap <= bucket_limit:
-            minutes = max(1, round(gap.total_seconds() / 60))
-            unit = "minute" if minutes == 1 else "minutes"
-            reason = f"Occurred {minutes} {unit} before the {target.event_type}."
+            reason = f"Occurred {_describe_gap(gap)} before the {target.event_type}."
             return points, reason, REASON_CODE_TEMPORAL_PROXIMITY
     return 0, None, None
 
