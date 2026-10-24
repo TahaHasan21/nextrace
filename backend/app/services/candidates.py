@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -72,18 +73,29 @@ def _is_eligible_candidate(event: Event, target: Event) -> bool:
     )
 
 
+def _plural(count: int, unit: str) -> str:
+    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
+
+
 def _describe_gap(gap: timedelta) -> str:
     """Human-readable gap for candidate reasons. Display only - scoring
     always uses the exact timedelta. Under a minute is stated in whole
-    seconds (a 21-second gap must not read as "1 minute"); a minute or more
-    keeps the existing nearest-minute wording."""
+    seconds (a 21-second gap must not read as "1 minute").
+
+    A minute or more is stated exactly in minutes and seconds, with any
+    fraction of a second rounded up, so the text always sits on the same
+    side of a whole-second scoring boundary as the gap itself: 120 s reads
+    "2 minutes" (scored as within 2 minutes), while 100 s and 150 s no
+    longer both read "2 minutes" despite scoring differently."""
     seconds = int(gap.total_seconds())
     if seconds < 1:
         return "less than a second"
     if seconds < 60:
-        return f"{seconds} second" if seconds == 1 else f"{seconds} seconds"
-    minutes = round(gap.total_seconds() / 60)
-    return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+        return _plural(seconds, "second")
+    minutes, remainder = divmod(math.ceil(gap.total_seconds()), 60)
+    if remainder == 0:
+        return _plural(minutes, "minute")
+    return f"{_plural(minutes, 'minute')} {_plural(remainder, 'second')}"
 
 
 def _temporal_score_and_reason(event: Event, target: Event) -> tuple[int, str | None, str | None]:

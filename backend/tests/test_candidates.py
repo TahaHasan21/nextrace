@@ -1,10 +1,15 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.demo.incident import generate_payment_incident
 from app.models.event import Event
-from app.services.candidates import CandidateResult, generate_candidates
+from app.services.candidates import (
+    TEMPORAL_PROXIMITY_BUCKETS,
+    CandidateResult,
+    generate_candidates,
+)
 from app.services.evidence import EvidenceItem, generate_evidence
 
 BASE_TIME = datetime(2026, 9, 6, 10, 0, 0, tzinfo=timezone.utc)
@@ -928,9 +933,14 @@ def test_generate_candidates_deterministic_with_richer_evidence():
         (timedelta(seconds=59), "Occurred 59 seconds before the error_spike."),
         (timedelta(seconds=59, milliseconds=999), "Occurred 59 seconds before the error_spike."),
         (timedelta(seconds=60), "Occurred 1 minute before the error_spike."),
-        (timedelta(seconds=89), "Occurred 1 minute before the error_spike."),
+        (timedelta(seconds=61), "Occurred 1 minute 1 second before the error_spike."),
+        (timedelta(seconds=89), "Occurred 1 minute 29 seconds before the error_spike."),
+        (timedelta(seconds=100), "Occurred 1 minute 40 seconds before the error_spike."),
         (timedelta(minutes=2), "Occurred 2 minutes before the error_spike."),
+        (timedelta(minutes=2, milliseconds=400), "Occurred 2 minutes 1 second before the error_spike."),
+        (timedelta(seconds=150), "Occurred 2 minutes 30 seconds before the error_spike."),
         (timedelta(minutes=4), "Occurred 4 minutes before the error_spike."),
+        (timedelta(minutes=5, seconds=1), "Occurred 5 minutes 1 second before the error_spike."),
         (timedelta(minutes=10), "Occurred 10 minutes before the error_spike."),
     ],
 )
@@ -966,3 +976,38 @@ def test_reason_wording_change_leaves_scores_at_bucket_boundaries_unchanged(gap,
 
     assert candidate.score == expected_score
     assert (candidate.reason_codes[0] == "temporal_proximity") == (gap <= timedelta(minutes=10))
+
+
+_DISPLAYED_GAP = re.compile(
+    r"^Occurred (?:(?P<m>\d+) minutes?)? ?(?:(?P<s>\d+) seconds?)? ?before the error_spike\.$"
+)
+
+
+def test_reason_wording_never_contradicts_a_score_bucket():
+    """100 s and 150 s must not both read "2 minutes" when they score 30 and
+    20: the displayed duration falls on the same side of every bucket
+    boundary as the real gap - including fractional gaps just past one."""
+    boundaries = [limit.total_seconds() for limit, _ in TEMPORAL_PROXIMITY_BUCKETS]
+    gaps = [timedelta(seconds=s) for s in range(60, 661)]
+    gaps += [
+        timedelta(seconds=b + delta)
+        for b in boundaries
+        for delta in (-0.999, -0.4, -0.001, 0.001, 0.4, 0.999)
+    ]
+    for gap in gaps:
+        target = _event(2, event_type="error_spike", timestamp=BASE_TIME + gap)
+        deployment = _event(1, event_type="deployment", timestamp=BASE_TIME)
+        [candidate] = generate_candidates(target, [deployment, target], [])
+        if candidate.reason_codes[0] != "temporal_proximity":
+            # Beyond the last bucket: no temporal reason (or points) at all.
+            assert gap.total_seconds() > boundaries[-1]
+            continue
+
+        match = _DISPLAYED_GAP.match(candidate.reasons[0])
+        assert match, candidate.reasons[0]
+        displayed = int(match["m"] or 0) * 60 + int(match["s"] or 0)
+        for boundary in boundaries:
+            assert (displayed <= boundary) == (gap.total_seconds() <= boundary), (
+                gap,
+                candidate.reasons[0],
+            )

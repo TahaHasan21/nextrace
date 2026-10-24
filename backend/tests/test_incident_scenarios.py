@@ -202,7 +202,7 @@ def test_deployment_regression_investigation(client):
     # 30 (<= 2 min) + 25 (deployment) + 20 (sequence) + 10 (temporal) + 15 (recovery)
     assert deploy_candidate["event_id"] == d
     assert deploy_candidate["score"] == 100
-    assert deploy_candidate["reasons"][0] == "Occurred 2 minutes before the error_spike."
+    assert deploy_candidate["reasons"][0] == "Occurred 1 minute 40 seconds before the error_spike."
     assert deploy_candidate["reason_codes"] == [
         "temporal_proximity", "relevant_event_type", "evidence_sequence",
         "temporal_evidence", "recovery_context",
@@ -215,7 +215,7 @@ def test_deployment_regression_investigation(client):
     # 160 s before: 20 (<= 5 min) only - an autoscale is not a scored type.
     assert autoscale_candidate["event_id"] == ids["autoscale"]
     assert autoscale_candidate["score"] == 20
-    assert autoscale_candidate["reasons"] == ["Occurred 3 minutes before the error_spike."]
+    assert autoscale_candidate["reasons"] == ["Occurred 2 minutes 40 seconds before the error_spike."]
     assert autoscale_candidate["supporting_evidence_ids"] == []
 
 
@@ -508,7 +508,7 @@ def test_recovery_investigation_reflects_the_mitigation_sequence(client):
     # (named in the recovery evidence).
     assert rollback_candidate["event_id"] == rb
     assert rollback_candidate["score"] == 65
-    assert rollback_candidate["reasons"][0] == "Occurred 2 minutes before the recovery."
+    assert rollback_candidate["reasons"][0] == "Occurred 2 minutes 30 seconds before the recovery."
     # Spike, 290 s before: 20 (<= 5 min) + 10 (error_spike) + 15 (named in
     # the recovery evidence); no sequence pattern links it to a recovery.
     assert spike_candidate["event_id"] == s
