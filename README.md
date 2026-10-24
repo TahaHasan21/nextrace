@@ -420,6 +420,14 @@ backend records its own operational events with `source=nextrace-runtime`:
 
 The task ID comes from the ECS task metadata endpoint; without it (e.g.
 local Docker) no runtime events are recorded rather than inventing an ID.
+
+For local end-to-end validation only, set
+`NEXTRACE_RUNTIME_LOCAL_IDENTITY=true` (ignored on ECS). Events are then
+attributed to the running process - a `local-<uuid>` instance ID generated
+at startup, or a stable `NEXTRACE_RUNTIME_INSTANCE_ID` - with
+`source_event_id` `local/<instance-id>:...` and metadata
+`identity_source: "local"`, so they can never be mistaken for ECS task
+events. Use a distinct environment such as `local-validation`.
 Events carry counts and task/image identity only - never exception
 messages, request data, or credentials. Telemetry never blocks startup or
 changes an API response, and a failed telemetry write is never counted as

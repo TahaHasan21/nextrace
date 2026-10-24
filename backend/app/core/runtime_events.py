@@ -22,8 +22,18 @@ every Fargate task). No identifier is ever fabricated: if the endpoint is
 absent (local Docker, tests) or unreadable, no runtime events are recorded
 at all and the reason is logged once.
 
+Local validation (explicit opt-in, never used on ECS): with
+NEXTRACE_RUNTIME_LOCAL_IDENTITY=true and no ECS metadata endpoint, events
+are attributed to a genuine local process instance instead - a
+`local-<uuid4>` ID generated once per process start, or a stable name from
+NEXTRACE_RUNTIME_INSTANCE_ID. Local events use the `local/<instance-id>`
+prefix below instead of `task/<task-id>`, and metadata carries
+`instance_id` + `identity_source: "local"` instead of `task_id`, so local
+telemetry can never be mistaken for, or collide with, ECS telemetry.
+
 source_event_id values (deduplicated by the existing (source,
-source_event_id) unique constraint):
+source_event_id) unique constraint; `local/<instance-id>` replaces
+`task/<task-id>` for local instances):
 
     task/<task-id>:startup
         One per task. A process restart inside the same task (or several
@@ -57,6 +67,7 @@ Safety properties
 import os
 import re
 import threading
+import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -77,6 +88,12 @@ ENVIRONMENT_ENV_VAR = "NEXTRACE_RUNTIME_ENVIRONMENT"
 THRESHOLD_ENV_VAR = "NEXTRACE_ERROR_SPIKE_THRESHOLD"
 WINDOW_ENV_VAR = "NEXTRACE_ERROR_SPIKE_WINDOW_SECONDS"
 ECS_METADATA_ENV_VAR = "ECS_CONTAINER_METADATA_URI_V4"
+# Local validation only (see local_instance_identity()).
+LOCAL_IDENTITY_ENV_VAR = "NEXTRACE_RUNTIME_LOCAL_IDENTITY"
+INSTANCE_ID_ENV_VAR = "NEXTRACE_RUNTIME_INSTANCE_ID"
+
+IDENTITY_SOURCE_ECS = "ecs"
+IDENTITY_SOURCE_LOCAL = "local"
 
 DEFAULT_ERROR_SPIKE_THRESHOLD = 5
 DEFAULT_ERROR_SPIKE_WINDOW_SECONDS = 60
@@ -94,6 +111,7 @@ _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 # ECS task IDs are 32 hex characters today; accept a slightly wider, still
 # strict, charset rather than anything an unexpected payload might contain.
 _TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,128}$")
+_LOCAL_INSTANCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SERVICE_MAX_LENGTH = 100
 _ENVIRONMENT_MAX_LENGTH = 50
 
@@ -163,6 +181,13 @@ def load_config(environ: Mapping[str, str]) -> TelemetryConfig | None:
 
 @dataclass(frozen=True)
 class TaskIdentity:
+    """The runtime instance events are attributed to.
+
+    identity_source "ecs" (production): task_id is the real ECS task ID.
+    identity_source "local" (explicit local validation only): task_id holds
+    a per-process local instance ID - never presented as an ECS task ID.
+    """
+
     task_id: str
     task_definition_family: str | None = None
     task_definition_revision: str | None = None
@@ -171,8 +196,26 @@ class TaskIdentity:
     # registry host, which embeds the AWS account ID, is stripped.
     image: str | None = None
     image_digest: str | None = None
+    identity_source: str = IDENTITY_SOURCE_ECS
+
+    @property
+    def is_local(self) -> bool:
+        return self.identity_source == IDENTITY_SOURCE_LOCAL
+
+    @property
+    def event_id_prefix(self) -> str:
+        """Namespace for source_event_id: `task/<id>` for ECS, `local/<id>`
+        for local instances, so the two can never collide."""
+        return f"local/{self.task_id}" if self.is_local else f"task/{self.task_id}"
+
+    def identity_metadata(self) -> dict[str, str]:
+        if self.is_local:
+            return {"instance_id": self.task_id, "identity_source": IDENTITY_SOURCE_LOCAL}
+        return {"task_id": self.task_id}
 
     def as_metadata(self) -> dict[str, str]:
+        if self.is_local:
+            return self.identity_metadata()
         return {
             key: value
             for key, value in {
@@ -264,6 +307,56 @@ def fetch_task_identity(
         image=image,
         image_digest=image_digest,
     )
+
+
+def new_local_instance_id() -> str:
+    """A genuine identifier for this running process - generated once per
+    process start, never derived from or shaped like an ECS task ID."""
+    return f"local-{uuid.uuid4().hex}"
+
+
+def local_instance_identity(
+    environ: Mapping[str, str], generated_instance_id: str
+) -> TaskIdentity | None:
+    """Local-validation identity, or None.
+
+    Only when NEXTRACE_RUNTIME_LOCAL_IDENTITY is explicitly true AND the
+    process is not on ECS (no ECS metadata endpoint configured): on ECS the
+    real task identity is always used, and a failed ECS lookup never falls
+    back to a local identity. NEXTRACE_RUNTIME_INSTANCE_ID may pin a stable
+    instance name (so restarts of "the same" local instance deduplicate,
+    like a process restart inside one ECS task); otherwise the per-process
+    generated ID is used.
+    """
+    if (environ.get(LOCAL_IDENTITY_ENV_VAR) or "").strip().lower() not in _TRUE_VALUES:
+        return None
+    if (environ.get(ECS_METADATA_ENV_VAR) or "").strip():
+        return None
+
+    configured = (environ.get(INSTANCE_ID_ENV_VAR) or "").strip()
+    if configured and not _LOCAL_INSTANCE_ID_PATTERN.match(configured):
+        logger.warning(
+            "invalid local runtime instance id; local identity disabled",
+            extra={"event": "runtime_telemetry_invalid_setting", "reason": INSTANCE_ID_ENV_VAR},
+        )
+        return None
+
+    return TaskIdentity(
+        task_id=configured or generated_instance_id,
+        identity_source=IDENTITY_SOURCE_LOCAL,
+    )
+
+
+def resolve_runtime_identity(
+    environ: Mapping[str, str],
+    http_get: Callable[[str], Any],
+    generated_instance_id: str,
+) -> TaskIdentity | None:
+    """ECS task identity when running on ECS; otherwise the explicitly
+    enabled local identity; otherwise None (no runtime events)."""
+    if (environ.get(ECS_METADATA_ENV_VAR) or "").strip():
+        return fetch_task_identity(environ, http_get)
+    return local_instance_identity(environ, generated_instance_id)
 
 
 # --- Error-spike detection ----------------------------------------------
@@ -385,7 +478,7 @@ class RuntimeTelemetry:
 
         if identity is None:
             logger.warning(
-                "runtime telemetry: no ECS task identity; runtime events will not be recorded",
+                "runtime telemetry: no runtime identity; runtime events will not be recorded",
                 extra={"event": "runtime_telemetry_skipped", "reason": "task_identity_unavailable"},
             )
             return
@@ -403,6 +496,10 @@ class RuntimeTelemetry:
         if identity.image:
             details.append(f"image {identity.image}")
         suffix = f" ({', '.join(details)})" if details else ""
+        if identity.is_local:
+            message = f"{self.config.service} local instance started (instance {identity.task_id})"
+        else:
+            message = f"{self.config.service} task started{suffix}"
 
         return CanonicalEvent(
             service=self.config.service,
@@ -411,8 +508,8 @@ class RuntimeTelemetry:
             timestamp=self._started_at,
             severity="info",
             source=SOURCE_NAME,
-            source_event_id=f"task/{identity.task_id}:startup",
-            message=f"{self.config.service} task started{suffix}",
+            source_event_id=f"{identity.event_id_prefix}:startup",
+            message=message,
             metadata=identity.as_metadata(),
         )
 
@@ -422,7 +519,7 @@ class RuntimeTelemetry:
         bucket_label = observation.bucket_start.strftime("%Y%m%dT%H%M%SZ")
         window = self.config.error_spike_window_seconds
         metadata = {
-            "task_id": identity.task_id,
+            **identity.identity_metadata(),
             "failure_count": observation.failure_count,
             "unhandled_exception_count": observation.counts_by_kind.get(
                 FAILURE_UNHANDLED_EXCEPTION, 0
@@ -442,7 +539,7 @@ class RuntimeTelemetry:
             timestamp=observation.observed_at,
             severity="critical",
             source=SOURCE_NAME,
-            source_event_id=f"task/{identity.task_id}:error_spike:{bucket_label}",
+            source_event_id=f"{identity.event_id_prefix}:error_spike:{bucket_label}",
             message=(
                 f"{observation.failure_count} application failures within {window} seconds "
                 f"on {self.config.service}"
@@ -546,10 +643,13 @@ def start_runtime_telemetry(
             return None
 
         fetch = http_get or _http_get_json
+        # Generated once per process start; used only if the explicit local
+        # identity mode applies (never on ECS).
+        generated_instance_id = new_local_instance_id()
         telemetry = RuntimeTelemetry(
             config,
             session_factory=session_factory or _default_session_factory(),
-            identity_fetcher=lambda: fetch_task_identity(env, fetch),
+            identity_fetcher=lambda: resolve_runtime_identity(env, fetch, generated_instance_id),
             dispatch=dispatch or _run_in_background_thread,
             now=now or _utc_now,
         )

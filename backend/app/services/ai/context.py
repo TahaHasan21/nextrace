@@ -73,6 +73,8 @@ AI_METADATA_ALLOWLIST: frozenset[str] = frozenset(
         "status",
         # Runtime telemetry (app/core/runtime_events.py)
         "task_id",
+        "instance_id",
+        "identity_source",
         "task_definition_family",
         "task_definition_revision",
         "availability_zone",
