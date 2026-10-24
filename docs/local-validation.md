@@ -106,6 +106,7 @@ for i in 1 2 3 4 5; do
   curl -s -o /dev/null -w "failure $i -> %{http_code}\n" -H @"$VDIR/key.header" \
     -X POST "http://127.0.0.1:8000/investigations/$STARTUP_ID/analysis"                           # 503 each
 done
+FAILURES_DONE=$(date +%s)   # used by the optional step 10
 ```
 
 The 5-minute limit is the correlation window: a spike more than 5 minutes
@@ -161,9 +162,9 @@ duplicated.
 
 Scores are the existing heuristic (temporal proximity + event-type
 relevance + evidence + recovery context), not probabilities. Every reason
-and evidence description is observational - "Occurred 2 minutes before the
-error_spike", "A rollback was followed by recovery after an error_spike" -
-never causal.
+and evidence description is observational - "Occurred 1 minute 40 seconds
+before the error_spike", "A rollback was followed by recovery after an
+error_spike" - never causal.
 
 ## 10. Optional: a genuine unhandled-exception spike (isolated database only)
 
@@ -172,9 +173,21 @@ endpoint fail with a real database error inside the real code path. Five
 such 500s within 60 seconds produce an `error_spike` with
 `unhandled_exception_count: 5`.
 
+The burst must not overlap step 6's provider-failure burst in the error-spike
+detector, so it has to start:
+
+- **more than 60 seconds after step 6 finished**, so those failures have left
+  the trailing 60-second window. Otherwise the spike fires on the first 500,
+  with mixed counts.
+- **in a fresh 60-second window** (windows are aligned to whole UTC minutes),
+  because at most one spike is recorded per window per process.
+
+The first command below waits until both are true, which takes up to about
+two minutes, and needs `FAILURES_DONE` from step 6 in the same shell.
+
 ```bash
-# Start in a fresh minute: the detector records at most one spike per
-# 60-second bucket, so a burst in the same minute as step 7 is not recorded.
+start=$(( (${FAILURES_DONE:?run step 6 in this shell first} + 61 + 59) / 60 * 60 + 1 ))
+while [ "$(date +%s)" -lt "$start" ]; do sleep 1; done     # 1 s into a fresh window
 docker exec nextrace-validation-pg psql -U nextrace -d nextrace_validation -c 'ALTER TABLE analysis_runs RENAME TO analysis_runs_fault_injection'
 for i in 1 2 3 4 5; do curl -s -o /dev/null -w '%{http_code} ' "http://127.0.0.1:8000/investigations/$SPIKE_ID/analyses"; done; echo   # 500 x5
 docker exec nextrace-validation-pg psql -U nextrace -d nextrace_validation -c 'ALTER TABLE analysis_runs_fault_injection RENAME TO analysis_runs'
