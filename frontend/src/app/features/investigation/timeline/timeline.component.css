@@ -80,6 +80,7 @@
 }
 
 .timeline-message {
+  overflow-wrap: anywhere;
   color: var(--color-text-secondary);
   font-size: 13px;
   margin-bottom: 4px;
@@ -146,6 +147,19 @@
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
   word-break: break-word;
+}
+
+.pivot-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent-strong);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.pivot-button:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 600px) {

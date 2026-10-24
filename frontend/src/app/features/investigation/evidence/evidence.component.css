@@ -41,6 +41,7 @@
 }
 
 .evidence-description {
+  overflow-wrap: anywhere;
   color: var(--color-text-primary);
   font-size: 13px;
   margin-bottom: 6px;

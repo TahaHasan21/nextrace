@@ -30,6 +30,16 @@
               <span>Source: {{ event.source }}</span>
               <span class="timeline-meta-sep">&middot;</span>
               <span>#{{ event.id }}</span>
+              @if (event.id !== targetEventId) {
+                <span class="timeline-meta-sep">&middot;</span>
+                <button
+                  type="button"
+                  class="pivot-button"
+                  (click)="investigateEvent.emit(event.id)"
+                >
+                  Investigate this event
+                </button>
+              }
             </p>
 
             @if (hasMetadata(event)) {

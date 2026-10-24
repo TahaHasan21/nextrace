@@ -48,3 +48,10 @@ export function humanizeEventType(eventType: string): string {
     .map((word) => (word.length > 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
     .join(' ');
 }
+
+/** Seeded demo events carry a non-empty string `demo_scenario` in their
+ * metadata - the same rule the backend uses (app/services/provenance.py). */
+export function isDemoEvent(metadata: Record<string, unknown> | null | undefined): boolean {
+  const scenario = metadata?.['demo_scenario'];
+  return typeof scenario === 'string' && scenario.length > 0;
+}

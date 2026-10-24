@@ -1,0 +1,76 @@
+<details class="panel recent-events" [open]="expanded">
+  <summary class="recent-summary"><h2 class="panel-title">Recent events</h2></summary>
+  <div class="recent-header">
+    <p class="panel-subtitle">Newest first. Select an event to open its investigation.</p>
+    <div class="recent-controls">
+      <label class="demo-toggle">
+        <input
+          type="checkbox"
+          [checked]="hideDemo()"
+          (change)="toggleHideDemo($any($event.target).checked)"
+        />
+        Hide demo events
+      </label>
+      <button
+        type="button"
+        class="refresh-button"
+        [disabled]="state() === 'loading'"
+        (click)="load()"
+      >
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="empty-state">Loading recent events&hellip;</p>
+    }
+    @case ('error') {
+      <div class="recent-error">
+        <p>Could not load recent events. Is the backend running?</p>
+        <button type="button" class="retry-button" (click)="load()">Try again</button>
+      </div>
+    }
+    @case ('success') {
+      @if (events().length === 0) {
+        <p class="empty-state">
+          No events yet. Ingest events with <code>POST /events</code>, or enable runtime telemetry -
+          see the README.
+        </p>
+      } @else {
+        <ul class="recent-list">
+          @for (event of events(); track event.id) {
+            <li>
+              <button
+                type="button"
+                class="recent-item"
+                [class.recent-item--selected]="event.id === selectedEventId"
+                [attr.aria-current]="event.id === selectedEventId ? 'true' : null"
+                (click)="select(event)"
+              >
+                <span class="recent-time">
+                  {{ event.timestamp | date: 'MMM d, HH:mm:ss' : 'UTC' }}
+                </span>
+                <span class="recent-type">{{ labelFor(event.event_type) }}</span>
+                @if (event.severity) {
+                  <span class="badge badge--severity" [attr.data-severity]="event.severity">{{
+                    event.severity
+                  }}</span>
+                }
+                @if (isDemo(event)) {
+                  <span class="badge badge--demo">Demo</span>
+                }
+                <span class="recent-context"
+                  >{{ event.service }} &bull; {{ event.environment }}</span
+                >
+                <span class="recent-message" [title]="event.message">{{ event.message }}</span>
+                <span class="recent-id">#{{ event.id }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    }
+  }
+</details>

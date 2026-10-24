@@ -1,0 +1,141 @@
+.recent-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.recent-summary::-webkit-details-marker {
+  display: none;
+}
+
+.recent-summary .panel-title::before {
+  content: '▸ ';
+}
+
+.recent-events[open] .recent-summary .panel-title::before {
+  content: '▾ ';
+}
+
+.recent-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.recent-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.demo-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.refresh-button,
+.retry-button {
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.refresh-button:hover:not(:disabled),
+.retry-button:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.recent-error p {
+  color: var(--color-severity-critical);
+  margin-bottom: 8px;
+}
+
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+}
+
+.recent-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 120px minmax(90px, auto) auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 10px;
+  text-align: left;
+  background: var(--color-surface-alt);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.recent-item:hover {
+  border-color: var(--color-border-strong);
+}
+
+.recent-item--selected {
+  border-color: var(--color-accent);
+}
+
+.recent-time,
+.recent-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.recent-type {
+  font-weight: 600;
+}
+
+.recent-context {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.recent-message {
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.badge--demo {
+  color: var(--color-severity-warning);
+  border-color: var(--color-severity-warning);
+}
+
+@media (max-width: 640px) {
+  .recent-item {
+    grid-template-columns: 1fr auto;
+  }
+
+  .recent-message {
+    grid-column: 1 / -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

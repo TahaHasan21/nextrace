@@ -141,4 +141,18 @@ describe('InvestigationService', () => {
 
     expect(result).toEqual(mockDetail);
   });
+  it('lists recent events with a bounded limit, optionally excluding demo events', () => {
+    service.listRecentEvents().subscribe();
+    const all = httpMock.expectOne((req) => req.url === '/events');
+    expect(all.request.method).toBe('GET');
+    expect(all.request.params.get('limit')).toBe('25');
+    expect(all.request.params.has('exclude_demo')).toBe(false);
+    all.flush([]);
+
+    service.listRecentEvents({ excludeDemo: true }).subscribe();
+    const genuine = httpMock.expectOne((req) => req.url === '/events');
+    expect(genuine.request.params.get('exclude_demo')).toBe('true');
+    expect(genuine.request.headers.keys()).toEqual([]);
+    genuine.flush([]);
+  });
 });

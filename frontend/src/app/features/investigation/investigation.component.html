@@ -25,6 +25,12 @@
     </div>
   </section>
 
+  <app-recent-events
+    [expanded]="state() !== 'success'"
+    [selectedEventId]="state() === 'success' ? requestedEventId() : null"
+    (eventSelected)="openEvent($event)"
+  />
+
   @switch (state()) {
     @case ('loading') {
       <div class="panel state-panel">Loading investigation&hellip;</div>
@@ -77,8 +83,16 @@
           </dl>
         </section>
 
-        <app-timeline [events]="inv.timeline" [targetEventId]="inv.target_event.id" />
-        <app-candidates [candidates]="inv.candidates" [evidence]="inv.evidence" />
+        <app-timeline
+          [events]="inv.timeline"
+          [targetEventId]="inv.target_event.id"
+          (investigateEvent)="openEvent($event)"
+        />
+        <app-candidates
+          [candidates]="inv.candidates"
+          [evidence]="inv.evidence"
+          [timeline]="inv.timeline"
+        />
         <app-evidence [items]="inv.evidence" [timeline]="inv.timeline" />
         <app-ai-analysis
           [eventId]="inv.target_event.id"

@@ -1,4 +1,4 @@
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -7,6 +7,7 @@ import {
   AnalysisRunSummary,
   Investigation,
   InvestigationAnalysis,
+  NextraceEvent,
 } from '../../models/investigation.models';
 
 /**
@@ -24,6 +25,18 @@ export const INGEST_KEY_HEADER = 'X-NexTrace-Ingest-Key';
 @Injectable({ providedIn: 'root' })
 export class InvestigationService {
   private readonly http = inject(HttpClient);
+
+  /** Most recent events first (GET /events) - lets an operator pick an
+   * event to investigate instead of having to know its ID. */
+  listRecentEvents(
+    options: { limit?: number; excludeDemo?: boolean } = {},
+  ): Observable<NextraceEvent[]> {
+    let params = new HttpParams().set('limit', options.limit ?? 25);
+    if (options.excludeDemo) {
+      params = params.set('exclude_demo', true);
+    }
+    return this.http.get<NextraceEvent[]>('/events', { params });
+  }
 
   getInvestigation(eventId: number): Observable<Investigation> {
     return this.http.get<Investigation>(`/investigations/${eventId}`);

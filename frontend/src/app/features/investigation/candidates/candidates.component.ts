@@ -1,6 +1,7 @@
+import { DatePipe } from '@angular/common';
 import { Component, Input } from '@angular/core';
 
-import { Candidate, Evidence } from '../../../models/investigation.models';
+import { Candidate, Evidence, NextraceEvent } from '../../../models/investigation.models';
 import { humanizeEventType } from '../../../shared/format-metadata';
 
 const EVIDENCE_TYPE_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ export interface CandidateReasonSummary {
 
 @Component({
   selector: 'app-candidates',
+  imports: [DatePipe],
   templateUrl: './candidates.component.html',
   styleUrl: './candidates.component.css',
 })
@@ -42,6 +44,14 @@ export class CandidatesComponent {
   /** Resolves supporting_evidence_ids against the already-loaded evidence
    * list - no extra API request is made per candidate. */
   @Input({ required: true }) evidence: Evidence[] = [];
+  /** The investigation's timeline, used only to show which concrete event
+   * each candidate is (time and message) - every candidate is a timeline
+   * event, so no extra request is made. */
+  @Input() timeline: NextraceEvent[] = [];
+
+  protected eventFor(candidate: Candidate): NextraceEvent | undefined {
+    return this.timeline.find((event) => event.id === candidate.event_id);
+  }
 
   protected labelFor(eventType: string): string {
     return humanizeEventType(eventType);

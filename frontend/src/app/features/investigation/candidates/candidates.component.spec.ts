@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { Candidate, Evidence } from '../../../models/investigation.models';
+import { Candidate, Evidence, NextraceEvent } from '../../../models/investigation.models';
 import { CandidatesComponent } from './candidates.component';
 
 function makeCandidate(overrides: Partial<Candidate>): Candidate {
@@ -196,5 +196,30 @@ describe('CandidatesComponent', () => {
     const text = (fixture.nativeElement.textContent as string).toLowerCase();
     expect(text).not.toContain('caused');
     expect(text).not.toContain('root cause:');
+  });
+  it('identifies the concrete event behind each candidate and links to it in the timeline', () => {
+    const deployment: NextraceEvent = {
+      id: 21,
+      service: 'checkout-api',
+      environment: 'staging',
+      event_type: 'deployment',
+      timestamp: '2026-10-01T12:00:00Z',
+      severity: 'info',
+      source: 'github',
+      message: 'Version 2.3.0 deployed',
+      metadata: null,
+      created_at: '2026-10-01T12:00:01Z',
+    };
+    const fixture = TestBed.createComponent(CandidatesComponent);
+    fixture.componentRef.setInput('candidates', [makeCandidate({ event_id: 21 })]);
+    fixture.componentRef.setInput('evidence', []);
+    fixture.componentRef.setInput('timeline', [deployment]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('.candidate-event-link');
+    expect(link.getAttribute('href')).toBe('#event-21');
+    expect(link.textContent).toContain('Event #21');
+    expect(link.textContent).toContain('12:00:00 UTC');
+    expect(fixture.nativeElement.textContent).toContain('Version 2.3.0 deployed');
   });
 });

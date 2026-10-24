@@ -1,3 +1,5 @@
+import { Location, PlatformLocation } from '@angular/common';
+import { MockPlatformLocation } from '@angular/common/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -8,6 +10,7 @@ import {
   AnalysisRunSummary,
   Investigation,
   InvestigationAnalysis,
+  NextraceEvent,
 } from '../../models/investigation.models';
 import { InvestigationComponent } from './investigation.component';
 
@@ -15,8 +18,15 @@ class FakeInvestigationService {
   private response$ = new Subject<Investigation>();
   private nextCall: (() => Observable<Investigation>) | null = null;
   private nextAnalysisCall: (() => Observable<InvestigationAnalysis>) | null = null;
+  readonly requestedEventIds: number[] = [];
+  recentEvents: NextraceEvent[] = [];
 
-  getInvestigation(_eventId: number): Observable<Investigation> {
+  listRecentEvents(): Observable<NextraceEvent[]> {
+    return of(this.recentEvents);
+  }
+
+  getInvestigation(eventId: number): Observable<Investigation> {
+    this.requestedEventIds.push(eventId);
     if (this.nextCall) {
       return this.nextCall();
     }
@@ -100,7 +110,13 @@ describe('InvestigationComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [InvestigationComponent],
-      providers: [{ provide: InvestigationService, useValue: fakeService }],
+      providers: [
+        { provide: InvestigationService, useValue: fakeService },
+        // Investigations are reflected in the URL (?event=<id>). The real
+        // Location over a mock platform location keeps browser semantics
+        // (path() includes the query) without leaking between tests.
+        { provide: PlatformLocation, useClass: MockPlatformLocation },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(InvestigationComponent);
@@ -339,5 +355,91 @@ describe('InvestigationComponent', () => {
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Could not load the investigation');
+  });
+  describe('finding and navigating investigations', () => {
+    function eventInUrl(): string | null {
+      const query = TestBed.inject(Location).path().split('?')[1] ?? '';
+      return new URLSearchParams(query).get('event');
+    }
+
+    /** The fixture from beforeEach must not also initialize from the URL. */
+    function recreateFixture(): void {
+      fixture.destroy();
+      fixture = TestBed.createComponent(InvestigationComponent);
+      fixture.detectChanges();
+    }
+
+    const recentDeployment: NextraceEvent = {
+      ...sampleInvestigation.timeline[0],
+      id: 7,
+      event_type: 'deployment',
+      message: 'Version 2.3.0 deployed',
+    };
+
+    it('opens an investigation chosen from the recent events list', () => {
+      fakeService.recentEvents = [recentDeployment];
+      fakeService.queueResult(() => of(sampleInvestigation));
+      fixture.detectChanges();
+
+      const item: HTMLButtonElement = fixture.nativeElement.querySelector('.recent-item');
+      expect(item.textContent).toContain('Version 2.3.0 deployed');
+      item.click();
+      fixture.detectChanges();
+
+      expect(fakeService.requestedEventIds).toEqual([7]);
+      expect(fixture.nativeElement.textContent).toContain('Payment failures reported in production');
+    });
+
+    it('reflects the open investigation in the URL so it can be linked and reloaded', () => {
+      fakeService.queueResult(() => of(sampleInvestigation));
+
+      setEventIdAndInvestigate('5');
+
+      expect(eventInUrl()).toBe('5');
+    });
+
+    it('does not change the URL when the lookup fails', () => {
+      fakeService.queueResult(() =>
+        throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+      );
+
+      setEventIdAndInvestigate('999');
+
+      expect(eventInUrl()).toBeNull();
+    });
+
+    it('opens the investigation named in ?event= on load', () => {
+      TestBed.inject(Location).replaceState('/', 'event=5');
+      fakeService.queueResult(() => of(sampleInvestigation));
+      recreateFixture();
+
+      expect(fakeService.requestedEventIds).toEqual([5]);
+      expect(fixture.nativeElement.textContent).toContain('Payment failures reported in production');
+    });
+
+    it('rejects an invalid ?event= value with the normal validation message', () => {
+      TestBed.inject(Location).replaceState('/', 'event=abc');
+      recreateFixture();
+
+      expect(fakeService.requestedEventIds).toEqual([]);
+      expect(fixture.nativeElement.textContent).toContain('Event ID must be a positive whole number.');
+    });
+
+    it('pivots to another timeline event from inside an investigation', () => {
+      const withDeployment: Investigation = {
+        ...sampleInvestigation,
+        timeline: [recentDeployment, ...sampleInvestigation.timeline],
+      };
+      fakeService.queueResult(() => of(withDeployment));
+      setEventIdAndInvestigate('5');
+
+      const pivots = fixture.nativeElement.querySelectorAll('.pivot-button');
+      expect(pivots.length).toBe(1); // never offered for the current target
+      pivots[0].click();
+      fixture.detectChanges();
+
+      expect(fakeService.requestedEventIds).toEqual([5, 7]);
+      expect(eventInUrl()).toBe('7');
+    });
   });
 });

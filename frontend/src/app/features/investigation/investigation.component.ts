@@ -1,6 +1,6 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { InvestigationService } from '../../core/services/investigation.service';
@@ -9,7 +9,10 @@ import { humanizeEventType } from '../../shared/format-metadata';
 import { AiAnalysisComponent, AnalysisState } from './ai-analysis/ai-analysis.component';
 import { CandidatesComponent } from './candidates/candidates.component';
 import { EvidenceComponent } from './evidence/evidence.component';
+import { RecentEventsComponent } from './recent-events/recent-events.component';
 import { TimelineComponent } from './timeline/timeline.component';
+
+const EVENT_QUERY_PARAM = 'event';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'not-found' | 'error';
 
@@ -30,12 +33,14 @@ const AI_ANALYSIS_STATUS_LABELS: Record<AnalysisState, string> = {
     EvidenceComponent,
     CandidatesComponent,
     AiAnalysisComponent,
+    RecentEventsComponent,
   ],
   templateUrl: './investigation.component.html',
   styleUrl: './investigation.component.css',
 })
-export class InvestigationComponent {
+export class InvestigationComponent implements OnInit {
   private readonly investigationService = inject(InvestigationService);
+  private readonly location = inject(Location);
 
   // Bound via [(ngModel)] on an <input type="number">, so Angular's
   // NumberValueAccessor writes back an actual `number` (or `null` when
@@ -46,6 +51,24 @@ export class InvestigationComponent {
   protected readonly errorMessage = signal('');
   protected readonly requestedEventId = signal<number | null>(null);
   protected readonly aiAnalysisState = signal<AnalysisState>('idle');
+
+  /** `?event=<id>` opens that investigation directly, so an investigation
+   * can be linked to and survives a reload. Event IDs are not secrets; the
+   * operator key never goes anywhere near the URL. */
+  ngOnInit(): void {
+    const query = this.location.path().split('?')[1] ?? '';
+    const linked = new URLSearchParams(query).get(EVENT_QUERY_PARAM);
+    if (linked !== null) {
+      this.openEvent(Number(linked));
+    }
+  }
+
+  /** Opens an investigation chosen from the recent-events list or the
+   * timeline - the same path as typing the ID and pressing Investigate. */
+  protected openEvent(eventId: number): void {
+    this.eventIdInput = eventId;
+    this.investigate();
+  }
 
   protected eventTypeLabel(eventType: string): string {
     return humanizeEventType(eventType);
@@ -83,6 +106,10 @@ export class InvestigationComponent {
       next: (result) => {
         this.investigation.set(result);
         this.state.set('success');
+        this.location.replaceState(
+          this.location.path().split('?')[0] || '/',
+          `${EVENT_QUERY_PARAM}=${eventId}`,
+        );
       },
       error: (err: HttpErrorResponse) => {
         if (err.status === 404) {

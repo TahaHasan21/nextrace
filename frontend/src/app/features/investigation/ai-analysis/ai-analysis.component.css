@@ -274,3 +274,10 @@
   border-color: var(--color-accent);
   outline: none;
 }
+
+.ai-result p,
+.ai-result li,
+.history-run-detail p,
+.history-run-detail li {
+  overflow-wrap: anywhere;
+}
