@@ -1,8 +1,16 @@
-import { DatePipe, Location } from '@angular/common';
+import { DOCUMENT, DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  Injector,
+  OnDestroy,
+  OnInit,
+  afterNextRender,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subscription, SubscriptionLike } from 'rxjs';
 
 import { InvestigationService } from '../../core/services/investigation.service';
 import { Investigation } from '../../models/investigation.models';
@@ -39,9 +47,11 @@ const AI_ANALYSIS_STATUS_LABELS: Record<AnalysisState, string> = {
   templateUrl: './investigation.component.html',
   styleUrl: './investigation.component.css',
 })
-export class InvestigationComponent implements OnInit {
+export class InvestigationComponent implements OnInit, OnDestroy {
   private readonly investigationService = inject(InvestigationService);
   private readonly location = inject(Location);
+  private readonly document = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
 
   // Bound via [(ngModel)] on an <input type="number">, so Angular's
   // NumberValueAccessor writes back an actual `number` (or `null` when
@@ -53,23 +63,55 @@ export class InvestigationComponent implements OnInit {
   protected readonly requestedEventId = signal<number | null>(null);
   protected readonly aiAnalysisState = signal<AnalysisState>('idle');
   private lookup?: Subscription;
+  private urlChanges?: SubscriptionLike;
 
   /** `?event=<id>` opens that investigation directly, so an investigation
    * can be linked to and survives a reload. Event IDs are not secrets; the
    * operator key never goes anywhere near the URL. */
   ngOnInit(): void {
-    const query = this.location.path().split('?')[1] ?? '';
-    const linked = new URLSearchParams(query).get(EVENT_QUERY_PARAM);
-    if (linked !== null) {
-      this.openEvent(Number(linked));
-    }
+    this.openFromUrl(this.location.path(true));
+    // Browser Back/Forward (popstate) and fragment changes (hashchange):
+    // the displayed investigation must always be the one the URL names.
+    // Our own replaceState() calls do not notify subscribers, so this
+    // cannot loop.
+    this.urlChanges = this.location.subscribe((change) => this.followUrl(change.url ?? ''));
+  }
+
+  ngOnDestroy(): void {
+    this.urlChanges?.unsubscribe();
+    this.lookup?.unsubscribe();
   }
 
   /** Opens an investigation chosen from the recent-events list or the
-   * timeline - the same path as typing the ID and pressing Investigate. */
-  protected openEvent(eventId: number): void {
+   * timeline - the same path as typing the ID and pressing Investigate.
+   * `fragment` (from a URL) is kept in the URL and scrolled to once the
+   * investigation has rendered. */
+  protected openEvent(eventId: number, fragment: string | null = null): void {
     this.eventIdInput = eventId;
-    this.investigate();
+    this.investigate(fragment);
+  }
+
+  private followUrl(url: string): void {
+    const { eventId } = parseInvestigationUrl(url);
+    if (eventId === null) {
+      this.lookup?.unsubscribe();
+      this.requestedEventId.set(null);
+      this.investigation.set(null);
+      this.eventIdInput = '';
+      this.state.set('idle');
+      return;
+    }
+    if (Number(eventId) === this.requestedEventId()) {
+      return; // same investigation (e.g. an in-page link): the browser scrolls
+    }
+    this.openFromUrl(url);
+  }
+
+  private openFromUrl(url: string): void {
+    const { eventId, fragment } = parseInvestigationUrl(url);
+    if (eventId !== null) {
+      this.openEvent(Number(eventId), fragment);
+    }
   }
 
   protected eventTypeLabel(eventType: string): string {
@@ -84,7 +126,7 @@ export class InvestigationComponent implements OnInit {
     this.aiAnalysisState.set(next);
   }
 
-  protected investigate(): void {
+  protected investigate(fragment: string | null = null): void {
     // Only the latest lookup may update the page: a slower, earlier
     // request must never replace a newer selection (or a validation
     // message). Unsubscribing also cancels its HTTP request.
@@ -115,8 +157,11 @@ export class InvestigationComponent implements OnInit {
         this.state.set('success');
         this.location.replaceState(
           this.location.path().split('?')[0] || '/',
-          `${EVENT_QUERY_PARAM}=${eventId}`,
+          `${EVENT_QUERY_PARAM}=${eventId}` + (fragment ? `#${fragment}` : ''),
         );
+        if (fragment) {
+          this.scrollToWhenRendered(fragment);
+        }
       },
       error: (err: HttpErrorResponse) => {
         if (err.status === 404) {
@@ -135,4 +180,37 @@ export class InvestigationComponent implements OnInit {
   protected retry(): void {
     this.investigate();
   }
+
+  /** The browser's own scroll-to-fragment happens before the investigation
+   * has loaded, so the target does not exist yet; scroll once it renders.
+   * An unknown or malformed fragment is ignored. */
+  private scrollToWhenRendered(fragment: string): void {
+    afterNextRender(
+      {
+        read: () => {
+          let id = fragment;
+          try {
+            id = decodeURIComponent(fragment);
+          } catch {
+            // keep the raw fragment
+          }
+          this.document.getElementById(id)?.scrollIntoView?.();
+        },
+      },
+      { injector: this.injector },
+    );
+  }
+}
+
+/** Splits a base-relative app URL ("?event=6#evidence-x") into its event
+ * ID (null when absent) and fragment (null when absent or empty). */
+function parseInvestigationUrl(url: string): { eventId: string | null; fragment: string | null } {
+  const hashAt = url.indexOf('#');
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const fragment = hashAt === -1 ? '' : url.slice(hashAt + 1);
+  const query = beforeHash.split('?')[1] ?? '';
+  return {
+    eventId: new URLSearchParams(query).get(EVENT_QUERY_PARAM),
+    fragment: fragment || null,
+  };
 }

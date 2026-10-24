@@ -543,6 +543,128 @@ describe('InvestigationComponent', () => {
       expect(eventInUrl()).toBeNull();
     });
 
+    function investigationFor(id: number): Investigation {
+      const target = { ...sampleInvestigation.target_event, id, message: `Investigation of ${id}` };
+      return { ...sampleInvestigation, target_event: target, timeline: [target] };
+    }
+
+    function shownEvent(): string | null {
+      return fixture.nativeElement.querySelector('.incident-event-id')?.textContent.trim() ?? null;
+    }
+
+    it('follows browser Back and Forward to the investigation the URL names', () => {
+      const location = TestBed.inject(Location);
+      fakeService.queueResult(() => of(investigationFor(5)));
+      setEventIdAndInvestigate('5');
+      // An in-page link pushes a same-document history entry.
+      location.go('/', 'event=5#event-5');
+      // Pivot to event 7 (replaces that entry's URL).
+      fakeService.queueResult(() => of(investigationFor(7)));
+      (fixture.componentInstance as unknown as { openEvent(id: number): void }).openEvent(7);
+      fixture.detectChanges();
+      expect(eventInUrl()).toBe('7');
+      expect(shownEvent()).toBe('Event #7');
+
+      fakeService.queueResult(() => of(investigationFor(5)));
+      location.back();
+      fixture.detectChanges();
+      expect(eventInUrl()).toBe('5');
+      expect(shownEvent()).toBe('Event #5');
+
+      fakeService.queueResult(() => of(investigationFor(7)));
+      location.forward();
+      fixture.detectChanges();
+      expect(eventInUrl()).toBe('7');
+      expect(shownEvent()).toBe('Event #7');
+      expect(fakeService.requestedEventIds).toEqual([5, 7, 5, 7]);
+    });
+
+    it('does not reload the investigation when only the fragment changes', () => {
+      const location = TestBed.inject(Location);
+      fakeService.queueResult(() => of(investigationFor(5)));
+      setEventIdAndInvestigate('5');
+      location.go('/', 'event=5#event-5');
+
+      location.back(); // back to ?event=5 - same investigation
+      fixture.detectChanges();
+      location.forward(); // and to its fragment again
+      fixture.detectChanges();
+
+      expect(fakeService.requestedEventIds).toEqual([5]);
+      expect(shownEvent()).toBe('Event #5');
+    });
+
+    it('returns to the idle state when history reaches a URL without ?event=', () => {
+      const location = TestBed.inject(Location);
+      fakeService.queueResult(() => of(investigationFor(5)));
+      setEventIdAndInvestigate('5');
+      location.go('/');
+      location.back();
+      fixture.detectChanges();
+      expect(shownEvent()).toBe('Event #5');
+
+      location.forward();
+      fixture.detectChanges();
+
+      expect(shownEvent()).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('Enter an event ID above to begin');
+    });
+
+    describe('fragment in the opening URL', () => {
+      const original = Element.prototype.scrollIntoView;
+      let scrolledTo: string[];
+
+      beforeEach(() => {
+        scrolledTo = [];
+        // jsdom has no layout; record which element would be scrolled to.
+        Element.prototype.scrollIntoView = function (this: Element) {
+          scrolledTo.push(this.id);
+        };
+      });
+
+      afterEach(() => {
+        Element.prototype.scrollIntoView = original;
+      });
+
+      async function openUrl(query: string): Promise<void> {
+        TestBed.inject(Location).replaceState('/', query);
+        fakeService.queueResult(() => of(investigationFor(5)));
+        recreateFixture();
+        await fixture.whenStable();
+      }
+
+      it('scrolls to the target once the investigation has rendered and keeps the fragment', async () => {
+        await openUrl('event=5#event-5');
+
+        expect(scrolledTo).toEqual(['event-5']);
+        expect(shownEvent()).toBe('Event #5');
+        expect(TestBed.inject(Location).path(true)).toBe('?event=5#event-5');
+      });
+
+      it('ignores a fragment that matches nothing', async () => {
+        await openUrl('event=5#evidence-ev1_missing');
+
+        expect(scrolledTo).toEqual([]);
+        expect(shownEvent()).toBe('Event #5');
+      });
+
+      it('ignores a malformed fragment', async () => {
+        await openUrl('event=5#%E0%A4%A');
+
+        expect(scrolledTo).toEqual([]);
+        expect(shownEvent()).toBe('Event #5');
+      });
+
+      it('does not scroll for an ordinary lookup', async () => {
+        fakeService.queueResult(() => of(investigationFor(5)));
+        setEventIdAndInvestigate('5');
+        await fixture.whenStable();
+
+        expect(scrolledTo).toEqual([]);
+        expect(eventInUrl()).toBe('5');
+      });
+    });
+
     it('pivots to another timeline event from inside an investigation', () => {
       const withDeployment: Investigation = {
         ...sampleInvestigation,
