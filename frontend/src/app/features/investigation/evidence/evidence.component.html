@@ -22,7 +22,7 @@
             <ul class="related-events-list">
               @for (related of relatedEvents(item); track related.id) {
                 <li>
-                  <a class="related-event-link" [href]="'#event-' + related.id">
+                  <a class="related-event-link" [href]="linkTo('event-' + related.id)">
                     <span class="related-time">{{ related.time }}</span>
                     <span class="related-label">{{ related.label }}</span>
                   </a>

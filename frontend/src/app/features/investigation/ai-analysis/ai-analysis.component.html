@@ -59,7 +59,7 @@
               <span class="ai-evidence-refs-label">Supporting evidence</span>
               <ul>
                 @for (evidenceId of result.primary_candidate.supporting_evidence_ids; track evidenceId) {
-                  <li><a class="evidence-link" [href]="'#evidence-' + evidenceId">{{ evidenceId }}</a></li>
+                  <li><a class="evidence-link" [href]="linkTo('evidence-' + evidenceId)">{{ evidenceId }}</a></li>
                 }
               </ul>
             </div>
@@ -84,7 +84,7 @@
                     <span class="ai-evidence-refs-label">Supporting evidence</span>
                     <ul>
                       @for (evidenceId of alt.supporting_evidence_ids; track evidenceId) {
-                        <li><a class="evidence-link" [href]="'#evidence-' + evidenceId">{{ evidenceId }}</a></li>
+                        <li><a class="evidence-link" [href]="linkTo('evidence-' + evidenceId)">{{ evidenceId }}</a></li>
                       }
                     </ul>
                   </div>

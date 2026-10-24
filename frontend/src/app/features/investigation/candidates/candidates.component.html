@@ -21,7 +21,7 @@
           </div>
           @if (eventFor(candidate); as event) {
             <p class="candidate-event">
-              <a class="candidate-event-link" [href]="'#event-' + event.id">
+              <a class="candidate-event-link" [href]="linkTo('event-' + event.id)">
                 Event #{{ event.id }} &middot; {{ event.timestamp | date: 'HH:mm:ss' : 'UTC' }} UTC
               </a>
               <span class="candidate-event-message">{{ event.message }}</span>
@@ -46,7 +46,7 @@
                 <ul class="supporting-references-list">
                   @for (ref of supportingEvidence(candidate); track ref.id) {
                     <li>
-                      <a class="evidence-link" [href]="'#evidence-' + ref.id" [title]="ref.description">
+                      <a class="evidence-link" [href]="linkTo('evidence-' + ref.id)" [title]="ref.description">
                         {{ ref.label }}
                       </a>
                     </li>

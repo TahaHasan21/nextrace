@@ -2,6 +2,7 @@ import { DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 
 import { InvestigationService } from '../../core/services/investigation.service';
 import { Investigation } from '../../models/investigation.models';
@@ -51,6 +52,7 @@ export class InvestigationComponent implements OnInit {
   protected readonly errorMessage = signal('');
   protected readonly requestedEventId = signal<number | null>(null);
   protected readonly aiAnalysisState = signal<AnalysisState>('idle');
+  private lookup?: Subscription;
 
   /** `?event=<id>` opens that investigation directly, so an investigation
    * can be linked to and survives a reload. Event IDs are not secrets; the
@@ -83,6 +85,11 @@ export class InvestigationComponent implements OnInit {
   }
 
   protected investigate(): void {
+    // Only the latest lookup may update the page: a slower, earlier
+    // request must never replace a newer selection (or a validation
+    // message). Unsubscribing also cancels its HTTP request.
+    this.lookup?.unsubscribe();
+
     const raw = String(this.eventIdInput ?? '').trim();
     if (raw.length === 0) {
       this.state.set('error');
@@ -102,7 +109,7 @@ export class InvestigationComponent implements OnInit {
     this.state.set('loading');
     this.investigation.set(null);
 
-    this.investigationService.getInvestigation(eventId).subscribe({
+    this.lookup = this.investigationService.getInvestigation(eventId).subscribe({
       next: (result) => {
         this.investigation.set(result);
         this.state.set('success');

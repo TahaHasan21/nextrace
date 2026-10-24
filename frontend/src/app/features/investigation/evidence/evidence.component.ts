@@ -1,7 +1,9 @@
-import { Component, Input } from '@angular/core';
+import { Location } from '@angular/common';
+import { Component, Input, inject } from '@angular/core';
 
 import { Evidence, NextraceEvent } from '../../../models/investigation.models';
 import { formatTimeOnly, humanizeEventType } from '../../../shared/format-metadata';
+import { inPageHref } from '../../../shared/in-page-link';
 
 const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   temporal_proximity: 'Temporal relationship',
@@ -25,6 +27,13 @@ export class EvidenceComponent {
   /** Resolves each evidence item's event_ids against the already-loaded
    * timeline - the evidence panel never issues its own API request. */
   @Input({ required: true }) timeline: NextraceEvent[] = [];
+
+  private readonly location = inject(Location);
+
+  /** In-page link that keeps ?event=<id> - see inPageHref(). */
+  protected linkTo(elementId: string): string {
+    return inPageHref(this.location, elementId);
+  }
 
   protected labelFor(type: string): string {
     return EVIDENCE_TYPE_LABELS[type] ?? type;

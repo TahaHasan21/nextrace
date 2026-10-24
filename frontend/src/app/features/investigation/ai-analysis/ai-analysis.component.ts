@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
@@ -19,6 +19,7 @@ import {
   InvestigationAnalysis,
 } from '../../../models/investigation.models';
 import { humanizeEventType } from '../../../shared/format-metadata';
+import { inPageHref } from '../../../shared/in-page-link';
 
 export type AnalysisState = 'idle' | 'loading' | 'success' | 'unavailable' | 'error';
 type HistoryState = 'idle' | 'loading' | 'success' | 'error';
@@ -38,6 +39,7 @@ export class AiAnalysisComponent implements OnInit, OnChanges {
   @Output() readonly analysisStateChange = new EventEmitter<AnalysisState>();
 
   private readonly investigationService = inject(InvestigationService);
+  private readonly location = inject(Location);
 
   protected readonly state = signal<AnalysisState>('idle');
   protected readonly analysis = signal<InvestigationAnalysis | null>(null);
@@ -81,6 +83,11 @@ export class AiAnalysisComponent implements OnInit, OnChanges {
       this.selectedRunError.set('');
       this.loadHistory();
     }
+  }
+
+  /** In-page link that keeps ?event=<id> - see inPageHref(). */
+  protected linkTo(elementId: string): string {
+    return inPageHref(this.location, elementId);
   }
 
   protected labelFor(eventType: string): string {

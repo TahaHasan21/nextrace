@@ -1,8 +1,9 @@
-import { DatePipe } from '@angular/common';
-import { Component, Input } from '@angular/core';
+import { DatePipe, Location } from '@angular/common';
+import { Component, Input, inject } from '@angular/core';
 
 import { Candidate, Evidence, NextraceEvent } from '../../../models/investigation.models';
 import { humanizeEventType } from '../../../shared/format-metadata';
+import { inPageHref } from '../../../shared/in-page-link';
 
 const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   temporal_proximity: 'Temporal relationship',
@@ -48,6 +49,13 @@ export class CandidatesComponent {
    * each candidate is (time and message) - every candidate is a timeline
    * event, so no extra request is made. */
   @Input() timeline: NextraceEvent[] = [];
+
+  private readonly location = inject(Location);
+
+  /** In-page link that keeps ?event=<id> - see inPageHref(). */
+  protected linkTo(elementId: string): string {
+    return inPageHref(this.location, elementId);
+  }
 
   protected eventFor(candidate: Candidate): NextraceEvent | undefined {
     return this.timeline.find((event) => event.id === candidate.event_id);

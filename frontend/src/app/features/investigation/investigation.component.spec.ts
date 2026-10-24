@@ -441,6 +441,108 @@ describe('InvestigationComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('Event ID must be a positive whole number.');
     });
 
+    it('keeps every in-page link on the current page so following it never reloads the app', () => {
+      // Regression: bare "#id" hrefs resolve against <base href="/"> to
+      // "/#id", dropping ?event=<id> - the browser then loads a new
+      // document and the open investigation (and in-memory key) is lost.
+      const evidence = {
+        id: 'ev1_0123456789abcdef',
+        type: 'sequence_relationship',
+        description: 'A deployment was followed by an incident.',
+        event_ids: [7, 5],
+      };
+      const linked: Investigation = {
+        ...sampleInvestigation,
+        timeline: [recentDeployment, ...sampleInvestigation.timeline],
+        evidence: [evidence],
+        candidates: [
+          {
+            event_id: 7,
+            event_type: 'deployment',
+            score: 85,
+            reasons: ['Occurred 1 minute before the incident.'],
+            reason_codes: ['temporal_proximity'],
+            supporting_evidence_ids: [evidence.id],
+          },
+        ],
+      };
+      fakeService.queueResult(() => of(linked));
+      fakeService.queueAnalysisResult(() =>
+        of({
+          ...sampleAnalysis,
+          primary_candidate: {
+            event_id: 7,
+            event_type: 'deployment',
+            supporting_evidence_ids: [evidence.id],
+          },
+        }),
+      );
+      setEventIdAndInvestigate('5');
+      fixture.nativeElement.querySelector('.analyze-button').click();
+      fixture.detectChanges();
+
+      const base = 'http://localhost/'; // index.html: <base href="/">
+      const page = new URL('?event=5', base).href;
+      const links: HTMLAnchorElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('a[href*="#"]'),
+      );
+      const targets = links.map((a) => new URL(a.getAttribute('href')!, base));
+      expect(targets.map((url) => url.hash).sort()).toEqual([
+        '#event-5', // evidence -> supporting events
+        '#event-7', // candidate -> its event; evidence -> supporting events
+        '#event-7',
+        '#evidence-ev1_0123456789abcdef', // candidate -> supporting evidence
+        '#evidence-ev1_0123456789abcdef', // AI citation
+      ]);
+      for (const url of targets) {
+        url.hash = '';
+        expect(url.href).toBe(page); // same document: only the fragment differs
+      }
+    });
+
+    it('never lets an earlier, slower lookup replace the latest selection', () => {
+      const first = new Subject<Investigation>();
+      const second = new Subject<Investigation>();
+      fakeService.recentEvents = [recentDeployment, { ...recentDeployment, id: 8 }];
+      fixture.detectChanges();
+      const items = fixture.nativeElement.querySelectorAll('.recent-item');
+
+      fakeService.queueResult(() => first);
+      items[0].click(); // event 7 - its response is slow
+      fakeService.queueResult(() => second);
+      items[1].click(); // event 8 - selected last
+      fixture.detectChanges();
+
+      second.next({
+        ...sampleInvestigation,
+        target_event: { ...sampleInvestigation.target_event, id: 8, message: 'Selected last' },
+      });
+      first.next({
+        ...sampleInvestigation,
+        target_event: { ...sampleInvestigation.target_event, id: 7, message: 'Stale response' },
+      });
+      fixture.detectChanges();
+
+      expect(fakeService.requestedEventIds).toEqual([7, 8]);
+      const text = fixture.nativeElement.textContent as string;
+      expect(text).toContain('Selected last');
+      expect(text).not.toContain('Stale response');
+      expect(eventInUrl()).toBe('8');
+    });
+
+    it('does not let an in-flight lookup overwrite a later validation error', () => {
+      const pending = new Subject<Investigation>();
+      fakeService.queueResult(() => pending);
+      setEventIdAndInvestigate('5');
+
+      (fixture.componentInstance as unknown as { openEvent(id: number): void }).openEvent(-1);
+      pending.next(sampleInvestigation);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('Event ID must be a positive whole number.');
+      expect(eventInUrl()).toBeNull();
+    });
+
     it('pivots to another timeline event from inside an investigation', () => {
       const withDeployment: Investigation = {
         ...sampleInvestigation,
