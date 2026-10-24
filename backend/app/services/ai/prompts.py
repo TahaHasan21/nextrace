@@ -38,6 +38,11 @@ Keep these four things distinct in your output, and do not blend them:
    Always state plainly that correlation/sequence/recovery evidence does
    not prove causation, and name any real ambiguity (e.g. two candidates
    with equal or very close scores, or thin evidence for the top one).
+   When information that would materially change the conclusion is absent
+   from the context - for example no metric values around the target, no
+   detail of what a deployment or configuration change contained, or only
+   a single preceding event - say what is missing and how it limits the
+   conclusion. Never fill such a gap with an assumption.
 4. Recommended verification (recommended_checks) - concrete next steps for
    a human to perform, phrased as suggestions, grounded in the actual
    events present in the context (reference what they are, e.g. "review

@@ -270,3 +270,22 @@ def test_grounding_still_strips_fabricated_references_through_this_path(db_sessi
     assert run.result["alternative_candidates"][0]["supporting_evidence_ids"] == [
         evidence[0].id
     ]
+
+
+# --- Unexpected (non-provider) failure ---
+
+
+def test_unexpected_error_marks_the_run_failed_instead_of_leaving_it_pending(db_session):
+    target = _persist_event(db_session)
+    context, _ = _context_with_candidates(target.id)
+    provider = _ScriptedProvider([RuntimeError("internal detail: secret=abc")])
+
+    with pytest.raises(RuntimeError):
+        run_analysis(db_session, target.id, context, provider)
+
+    run = db_session.query(AnalysisRun).filter_by(target_event_id=target.id).one()
+    assert run.status == "failed"
+    assert run.completed_at is not None
+    assert run.error_message == "AI analysis failed unexpectedly."
+    assert "secret" not in run.error_message
+    assert provider.calls == 1  # never retried

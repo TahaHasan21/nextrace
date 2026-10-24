@@ -70,6 +70,15 @@ def _article(word: str) -> str:
     return "an" if word[:1].lower() in "aeiou" else "a"
 
 
+def _describe_seconds(gap: timedelta) -> str:
+    """Whole seconds for evidence descriptions (display only - never part of
+    the evidence ID)."""
+    seconds = int(gap.total_seconds())
+    if seconds < 1:
+        return "less than a second"
+    return "1 second" if seconds == 1 else f"{seconds} seconds"
+
+
 def _ordered_pattern_pairs(timeline: list[Event]):
     """Yield (earlier, later) pairs, in timeline order, that occur in a
     supported chronological order and share the same service/environment.
@@ -93,9 +102,8 @@ def _generate_temporal_evidence(
         gap = later.timestamp - earlier.timestamp
         if gap > window:
             continue
-        seconds = int(gap.total_seconds())
         description = (
-            f"{earlier.event_type.capitalize()} occurred {seconds} seconds "
+            f"{earlier.event_type.capitalize()} occurred {_describe_seconds(gap)} "
             f"before {later.event_type}."
         )
         evidence.append(

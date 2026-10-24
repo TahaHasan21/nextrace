@@ -44,6 +44,8 @@ from app.services.ai.provider import AIProvider, AIProviderError
 MAX_RETRIES = 1
 RETRY_DELAY_SECONDS = 0.5
 
+UNEXPECTED_FAILURE_MESSAGE = "AI analysis failed unexpectedly."
+
 
 @dataclass
 class _AttemptOutcome:
@@ -116,7 +118,19 @@ def run_analysis(
     db.commit()
     db.refresh(run)
 
-    outcome = _generate_with_retry(context, provider, sleep=sleep)
+    try:
+        outcome = _generate_with_retry(context, provider, sleep=sleep)
+    except Exception:
+        # Anything other than AIProviderError is a bug (in a provider or in
+        # grounding), not a provider outcome - still close the run so it is
+        # never left pending forever, with a generic message only (the
+        # exception text may carry internal detail), then let the app-level
+        # handler turn it into the usual 500.
+        run.status = STATUS_FAILED
+        run.error_message = UNEXPECTED_FAILURE_MESSAGE
+        run.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        raise
 
     run.retry_count = outcome.retry_count
     run.completed_at = datetime.now(timezone.utc)

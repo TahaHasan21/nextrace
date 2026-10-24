@@ -52,6 +52,27 @@ def test_temporal_proximity_evidence_generated_within_window():
     assert "120 seconds" in temporal[0].description
 
 
+def test_temporal_description_pluralizes_and_states_sub_second_gaps():
+    for gap, expected in (
+        (timedelta(milliseconds=400), "Deployment occurred less than a second before error_spike."),
+        (timedelta(seconds=1), "Deployment occurred 1 second before error_spike."),
+        (timedelta(seconds=2), "Deployment occurred 2 seconds before error_spike."),
+    ):
+        deployment = _event(1, event_type="deployment", timestamp=BASE_TIME)
+        error_spike = _event(2, event_type="error_spike", timestamp=BASE_TIME + gap)
+
+        [temporal] = [
+            item
+            for item in generate_evidence([deployment, error_spike])
+            if item.type == "temporal_proximity"
+        ]
+        assert temporal.description == expected
+        # Wording never affects identity.
+        assert temporal.id == EvidenceItem(
+            type="temporal_proximity", description="", event_ids=[1, 2]
+        ).id
+
+
 def test_temporal_window_boundary_is_included():
     deployment = _event(1, event_type="deployment", timestamp=BASE_TIME)
     error_spike = _event(

@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.main import app
+from app.models.analysis_run import AnalysisRun
 from app.services.ai.analysis import CandidateReference, InvestigationAnalysis
 from app.services.ai.provider import AIProviderError, get_ai_provider
 
@@ -77,6 +80,29 @@ def test_list_analyses_orders_most_recent_first(client, override_ai_provider):
     assert len(body) == 2
     assert body[0]["summary"] == "second"
     assert body[1]["summary"] == "first"
+
+
+def test_list_analyses_breaks_requested_at_ties_deterministically(client, db_session):
+    target = _create_event(client)
+    same_instant = datetime(2026, 9, 5, 10, 5, tzinfo=timezone.utc)
+    runs = [
+        AnalysisRun(
+            target_event_id=target["id"],
+            status="failed",
+            provider="FakeProvider",
+            model="m",
+            requested_at=same_instant,
+            retry_count=0,
+            context_snapshot={},
+        )
+        for _ in range(3)
+    ]
+    db_session.add_all(runs)
+    db_session.flush()
+
+    body = client.get(f"/investigations/{target['id']}/analyses").json()
+
+    assert [run["run_id"] for run in body] == sorted((run.id for run in runs), reverse=True)
 
 
 def test_list_analyses_response_schema(client, override_ai_provider):

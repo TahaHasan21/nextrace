@@ -163,7 +163,9 @@ def list_investigation_analyses(
     statement = (
         select(AnalysisRun)
         .where(AnalysisRun.target_event_id == event_id)
-        .order_by(AnalysisRun.requested_at.desc())
+        # id breaks requested_at ties, so the order never depends on how
+        # the database happens to return equal rows.
+        .order_by(AnalysisRun.requested_at.desc(), AnalysisRun.id.desc())
     )
     runs = db.scalars(statement).all()
 
